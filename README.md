@@ -66,6 +66,14 @@ La página inicial lista los incidentes guardados. El detalle de cada incidente 
 
 `GET /api/incidents/:id` devuelve un incidente y sus eventos ordenados por timestamp. Si no existe, responde `404`.
 
+`PATCH /api/incidents/:id` actualiza el estado, la causa raíz, la resolución, el equipo y el responsable. Hay que enviar `expectedUpdatedAt` con el `updatedAt` recibido en la última lectura. Si otro cambio ya avanzó esa fecha, la API responde `409` y no escribe nada. Un campo omitido no se modifica; `null` borra la causa raíz, la resolución o el responsable. El equipo no acepta `null`. No se pueden cambiar el id, la fecha de creación ni los eventos.
+
+Transiciones permitidas: `OPEN → INVESTIGATING`, `INVESTIGATING → RESOLVED`, `INVESTIGATING → OPEN` y `RESOLVED → OPEN`. Se puede conservar el estado actual. `OPEN → RESOLVED` no está permitido: primero hay que investigarlo. `CLOSED` existe en el modelo, pero este ciclo no entra ni sale de ese estado. Resolver exige una resolución con texto. Reabrir no borra la causa ni la resolución, y sí limpia `resolvedAt`.
+
+Cada operación que cambia algo escribe una fila en `IncidentActivity`, en la misma transacción. Si el historial falla, la actualización se revierte. La acción es `UPDATED` y `changes` guarda el valor anterior y el nuevo de cada campo modificado. `actorId` queda `null` porque todavía no hay autenticación.
+
+`GET /api/incidents/:id/activity` devuelve ese historial, del más reciente al más antiguo. Si el incidente no existe, responde `404`.
+
 `POST /api/events` valida un evento, lo guarda y lo asocia a un incidente. Dos eventos se agrupan solo si tienen el mismo servicio, el mismo tipo de error y sus timestamps caen dentro de `EVENT_CORRELATION_WINDOW_MINUTES` de un incidente abierto (`OPEN` o `INVESTIGATING`). Un evento de otro servicio, o el mismo error fuera de esa ventana, abre otro incidente. La causa raíz y la solución quedan vacías. Un identificador externo se deduplica junto con `source`; si se repite, la API responde `409`. Esa respuesta no repite el resultado original.
 
 ## Estructura

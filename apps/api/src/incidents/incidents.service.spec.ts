@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { IncidentsService } from "./incidents.service";
 
 describe("IncidentsService", () => {
@@ -149,5 +149,169 @@ describe("IncidentsService", () => {
     prisma.incident.findUnique.mockResolvedValue(null);
 
     await expect(service.getById("missing")).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe("IncidentsService updates", () => {
+  const updatedAt = new Date("2026-04-01T12:00:00.000Z");
+  const tx = {
+    incident: {
+      findUnique: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    incidentActivity: {
+      create: jest.fn(),
+    },
+  };
+  const prisma = {
+    $transaction: jest.fn((callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+    incident: {
+      findUnique: jest.fn(),
+    },
+  };
+  const service = new IncidentsService(prisma as never);
+
+  function storedIncident(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "incident-1",
+      title: "timeout",
+      status: "OPEN",
+      severity: "HIGH",
+      service: "checkout",
+      team: "BACKEND",
+      assignee: null,
+      rootCause: null,
+      resolution: null,
+      createdAt: updatedAt,
+      updatedAt,
+      resolvedAt: null,
+      events: [],
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.$transaction.mockImplementation((callback: (client: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+    );
+  });
+
+  it("writes the incident and one activity row in the same transaction", async () => {
+    tx.incident.findUnique
+      .mockResolvedValueOnce(storedIncident())
+      .mockResolvedValueOnce(
+        storedIncident({
+          status: "INVESTIGATING",
+          updatedAt: new Date("2026-04-01T12:05:00.000Z"),
+        }),
+      );
+    tx.incident.updateMany.mockResolvedValue({ count: 1 });
+    tx.incidentActivity.create.mockResolvedValue({ id: "activity-1" });
+
+    const detail = await service.update("incident-1", {
+      expectedUpdatedAt: updatedAt.toISOString(),
+      status: "INVESTIGATING",
+    });
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.incident.updateMany).toHaveBeenCalledWith({
+      where: { id: "incident-1", updatedAt },
+      data: { status: "INVESTIGATING" },
+    });
+    expect(tx.incidentActivity.create).toHaveBeenCalledWith({
+      data: {
+        incidentId: "incident-1",
+        action: "UPDATED",
+        actorId: null,
+        changes: { status: { from: "OPEN", to: "INVESTIGATING" } },
+      },
+    });
+    expect(detail.status).toBe("INVESTIGATING");
+  });
+
+  it("does not persist an invalid transition or a resolution without text", async () => {
+    tx.incident.findUnique.mockResolvedValue(storedIncident());
+
+    await expect(
+      service.update("incident-1", {
+        expectedUpdatedAt: updatedAt.toISOString(),
+        status: "RESOLVED",
+        resolution: "demasiado pronto",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    tx.incident.findUnique.mockResolvedValue(storedIncident({ status: "INVESTIGATING" }));
+    await expect(
+      service.update("incident-1", {
+        expectedUpdatedAt: updatedAt.toISOString(),
+        status: "RESOLVED",
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(tx.incident.updateMany).not.toHaveBeenCalled();
+    expect(tx.incidentActivity.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale updatedAt and a missing incident", async () => {
+    tx.incident.findUnique.mockResolvedValueOnce(storedIncident());
+    await expect(
+      service.update("incident-1", { expectedUpdatedAt: "2026-01-01T00:00:00.000Z" }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    tx.incident.findUnique.mockResolvedValueOnce(null);
+    await expect(
+      service.update("missing", { expectedUpdatedAt: updatedAt.toISOString() }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(tx.incident.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("propagates an activity failure from inside the transaction", async () => {
+    tx.incident.findUnique.mockResolvedValue(storedIncident());
+    tx.incident.updateMany.mockResolvedValue({ count: 1 });
+    tx.incidentActivity.create.mockRejectedValue(new Error("activity failed"));
+
+    await expect(
+      service.update("incident-1", {
+        expectedUpdatedAt: updatedAt.toISOString(),
+        rootCause: "Timeout del proveedor.",
+      }),
+    ).rejects.toThrow("activity failed");
+    expect(tx.incident.updateMany).toHaveBeenCalled();
+  });
+
+  it("returns activity from newest to oldest", async () => {
+    prisma.incident.findUnique.mockResolvedValue({
+      id: "incident-1",
+      activities: [
+        {
+          id: "newer",
+          action: "UPDATED",
+          createdAt: new Date("2026-04-02T00:00:00.000Z"),
+          actorId: null,
+          changes: { status: { from: "OPEN", to: "INVESTIGATING" } },
+        },
+        {
+          id: "older",
+          action: "UPDATED",
+          createdAt: new Date("2026-04-01T00:00:00.000Z"),
+          actorId: null,
+          changes: { assignee: { from: null, to: "Ada" } },
+        },
+      ],
+    });
+
+    const activity = await service.listActivity("incident-1");
+
+    expect(prisma.incident.findUnique).toHaveBeenCalledWith({
+      where: { id: "incident-1" },
+      select: {
+        id: true,
+        activities: { orderBy: [{ createdAt: "desc" }, { id: "desc" }] },
+      },
+    });
+    expect(activity.items.map((item) => item.id)).toEqual(["newer", "older"]);
+    expect(activity.items[1]?.changes.assignee).toEqual({ from: null, to: "Ada" });
   });
 });

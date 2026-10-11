@@ -42,8 +42,26 @@ model Incident {
   updatedAt  DateTime         @updatedAt @db.Timestamptz(3)
   resolvedAt DateTime?        @db.Timestamptz(3)
   events     Event[]
+  activities IncidentActivity[]
 
   @@index([service, status])
+}
+
+enum IncidentActivityAction {
+  UPDATED
+}
+
+/// One row per update operation. actorId stays null until the API has real authentication.
+model IncidentActivity {
+  id         String                 @id @default(uuid(7)) @db.Uuid
+  incidentId String                 @db.Uuid
+  incident   Incident               @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  action     IncidentActivityAction
+  changes    Json
+  actorId    String?                @db.VarChar(120)
+  createdAt  DateTime               @default(now()) @db.Timestamptz(3)
+
+  @@index([incidentId, createdAt])
 }
 
 model Event {

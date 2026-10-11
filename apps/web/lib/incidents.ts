@@ -1,11 +1,13 @@
 import type {
+  EditableIncidentStatus,
+  IncidentActivityResponse,
   IncidentDetail,
   IncidentListResponse,
   IncidentSeverity,
   IncidentStatus,
   IncidentTeam,
 } from "@signaldesk/contracts";
-import { apiGet } from "./api";
+import { apiGet, apiPatch } from "./api";
 
 export type IncidentListQuery = {
   page: number;
@@ -42,4 +44,21 @@ export function listIncidents(
 
 export function getIncident(id: string, signal?: AbortSignal): Promise<IncidentDetail> {
   return apiGet<IncidentDetail>(`/api/incidents/${encodeURIComponent(id)}`, signal);
+}
+
+export type IncidentUpdate = {
+  expectedUpdatedAt: string;
+  status?: EditableIncidentStatus;
+  rootCause?: string | null;
+  resolution?: string | null;
+  team?: IncidentTeam;
+  assignee?: string | null;
+};
+
+export function updateIncident(id: string, body: IncidentUpdate): Promise<IncidentDetail> {
+  return apiPatch<IncidentDetail>(`/api/incidents/${encodeURIComponent(id)}`, body);
+}
+
+export function getIncidentActivity(id: string, signal?: AbortSignal): Promise<IncidentActivityResponse> {
+  return apiGet<IncidentActivityResponse>(`/api/incidents/${encodeURIComponent(id)}/activity`, signal);
 }

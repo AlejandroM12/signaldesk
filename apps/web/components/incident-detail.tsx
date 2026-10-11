@@ -4,6 +4,7 @@ import type { IncidentDetail } from "@signaldesk/contracts";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { IncidentEditor } from "@/components/incident-editor";
 import { SeverityBadge, StatusBadge } from "@/components/incident-badges";
 import { ApiError } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
@@ -93,12 +94,14 @@ export function IncidentDetailView() {
         </section>
       ) : null}
 
-      {visible.status === "ready" ? <IncidentFacts incident={visible.incident} /> : null}
+      {visible.status === "ready" ? <IncidentWorkspace initial={visible.incident} /> : null}
     </main>
   );
 }
 
-function IncidentFacts({ incident }: { incident: IncidentDetail }) {
+function IncidentWorkspace({ initial }: { initial: IncidentDetail }) {
+  const [incident, setIncident] = useState(initial);
+
   return (
     <>
       <header>
@@ -120,6 +123,8 @@ function IncidentFacts({ incident }: { incident: IncidentDetail }) {
           <Field label="Resuelto" value={formatTimestamp(incident.resolvedAt)} dateTime={incident.resolvedAt} />
         ) : null}
       </dl>
+
+      <IncidentEditor incident={incident} onUpdated={setIncident} />
 
       <section>
         <h2 className="text-lg font-semibold">
@@ -154,7 +159,9 @@ function Field({ label, value, dateTime }: { label: string; value: string; dateT
   return (
     <div>
       <dt className="text-sm font-medium text-zinc-500">{label}</dt>
-      <dd className="mt-1">{dateTime ? <time dateTime={dateTime}>{value}</time> : value}</dd>
+      <dd className="mt-1">
+        {dateTime ? <time dateTime={dateTime}>{value}</time> : value}
+      </dd>
     </div>
   );
 }

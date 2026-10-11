@@ -1,5 +1,13 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import type {
+  IncidentActivityChanges,
+  IncidentActivityResponse,
   IncidentDetail,
   IncidentListResponse,
   IncidentStatus,
@@ -8,6 +16,8 @@ import type {
 import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import type { ListIncidentsQueryDto } from "./dto/list-incidents.query";
+import type { UpdateIncidentDto } from "./dto/update-incident.dto";
+import { planIncidentUpdate } from "./incident-update";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
@@ -82,9 +92,114 @@ export class IncidentsService {
 
     return toIncidentDetail(incident);
   }
+
+  async update(id: string, dto: UpdateIncidentDto): Promise<IncidentDetail> {
+    const expectedUpdatedAt = new Date(dto.expectedUpdatedAt);
+    if (Number.isNaN(expectedUpdatedAt.getTime())) {
+      throw new BadRequestException("expectedUpdatedAt no es una fecha válida.");
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const current = await tx.incident.findUnique({ where: { id } });
+        if (!current) {
+          throw new NotFoundException(INCIDENT_NOT_FOUND);
+        }
+
+        if (current.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+          throw new ConflictException(INCIDENT_CONFLICT);
+        }
+
+        const plan = planIncidentUpdate(
+          current,
+          {
+            status: dto.status,
+            team: dto.team,
+            assignee: dto.assignee,
+            rootCause: dto.rootCause,
+            resolution: dto.resolution,
+          },
+          new Date(),
+        );
+
+        if (!plan.ok && plan.error === "invalid-transition") {
+          throw new BadRequestException(
+            `No se puede pasar de ${current.status} a ${dto.status ?? current.status}.`,
+          );
+        }
+
+        if (!plan.ok) {
+          throw new BadRequestException("Para resolver el incidente hace falta una resolución.");
+        }
+
+        if (plan.changed) {
+          const written = await tx.incident.updateMany({
+            where: { id, updatedAt: current.updatedAt },
+            data: plan.data,
+          });
+          if (written.count !== 1) {
+            throw new ConflictException(INCIDENT_CONFLICT);
+          }
+
+          await tx.incidentActivity.create({
+            data: {
+              incidentId: id,
+              action: "UPDATED",
+              changes: plan.changes,
+              actorId: null,
+            },
+          });
+        }
+
+        const saved = await tx.incident.findUnique({
+          where: { id },
+          include: { events: { orderBy: { timestamp: "asc" } } },
+        });
+        if (!saved) {
+          throw new NotFoundException(INCIDENT_NOT_FOUND);
+        }
+
+        return toIncidentDetail(saved);
+      });
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw error;
+    }
+  }
+
+  async listActivity(id: string): Promise<IncidentActivityResponse> {
+    const incident = await this.prisma.incident.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        activities: {
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        },
+      },
+    });
+
+    if (!incident) {
+      throw new NotFoundException(INCIDENT_NOT_FOUND);
+    }
+
+    return {
+      items: incident.activities.map((activity) => ({
+        id: activity.id,
+        action: activity.action,
+        createdAt: activity.createdAt.toISOString(),
+        actorId: activity.actorId,
+        changes: readChanges(activity.changes),
+      })),
+    };
+  }
 }
 
 const INCIDENT_NOT_FOUND = "No encontramos ese incidente.";
+const INCIDENT_CONFLICT =
+  "El incidente cambió desde que lo cargaste. Volvé a leerlo antes de guardar.";
 
 type IncidentWithEvents = Prisma.IncidentGetPayload<{
   include: { events: true };
@@ -115,6 +230,31 @@ function toIncidentDetail(incident: IncidentWithEvents): IncidentDetail {
       metadata: event.metadata,
     })),
   };
+}
+
+const ACTIVITY_FIELDS = ["status", "rootCause", "resolution", "team", "assignee"] as const;
+
+function readChanges(value: unknown): IncidentActivityChanges {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const source = value as Record<string, unknown>;
+  const changes: IncidentActivityChanges = {};
+  for (const field of ACTIVITY_FIELDS) {
+    const entry = source[field];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+
+    const record = entry as Record<string, unknown>;
+    changes[field] = {
+      from: typeof record.from === "string" ? record.from : null,
+      to: typeof record.to === "string" ? record.to : null,
+    };
+  }
+
+  return changes;
 }
 
 function buildWhere(query: ListIncidentsQueryDto): Prisma.IncidentWhereInput {

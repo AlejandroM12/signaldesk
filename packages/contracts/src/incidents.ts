@@ -7,6 +7,37 @@ export type IncidentSeverity = (typeof INCIDENT_SEVERITIES)[number];
 export const INCIDENT_TEAMS = ["FRONTEND", "BACKEND", "UNKNOWN"] as const;
 export type IncidentTeam = (typeof INCIDENT_TEAMS)[number];
 
+export const EDITABLE_INCIDENT_STATUSES = ["OPEN", "INVESTIGATING", "RESOLVED"] as const;
+export type EditableIncidentStatus = (typeof EDITABLE_INCIDENT_STATUSES)[number];
+
+export const INCIDENT_ACTIVITY_ACTIONS = ["UPDATED"] as const;
+export type IncidentActivityAction = (typeof INCIDENT_ACTIVITY_ACTIONS)[number];
+
+export type IncidentActivityChange = {
+  from: string | null;
+  to: string | null;
+};
+
+export type IncidentActivityChanges = {
+  status?: IncidentActivityChange;
+  rootCause?: IncidentActivityChange;
+  resolution?: IncidentActivityChange;
+  team?: IncidentActivityChange;
+  assignee?: IncidentActivityChange;
+};
+
+export type IncidentActivityEntry = {
+  id: string;
+  action: IncidentActivityAction;
+  createdAt: string;
+  actorId: string | null;
+  changes: IncidentActivityChanges;
+};
+
+export type IncidentActivityResponse = {
+  items: IncidentActivityEntry[];
+};
+
 export type IncidentSummary = {
   open: number;
   investigating: number;

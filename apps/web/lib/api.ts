@@ -26,6 +26,16 @@ export function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
   });
 }
 
+export function apiPatch<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  return request<T>(path, {
+    method: "PATCH",
+    signal,
+    cache: "no-store",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 async function request<T>(path: string, init: RequestInit): Promise<T> {
   let response: Response;
 
