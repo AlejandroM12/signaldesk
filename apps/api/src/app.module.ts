@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { join } from "node:path";
 import { EventsModule } from "./events/events.module";
 import { HealthController } from "./health/health.controller";
+import { IncidentsModule } from "./incidents/incidents.module";
 import { PrismaModule } from "./prisma/prisma.module";
 
 @Module({
@@ -13,6 +14,7 @@ import { PrismaModule } from "./prisma/prisma.module";
     }),
     PrismaModule,
     EventsModule,
+    IncidentsModule,
   ],
   controllers: [HealthController],
 })

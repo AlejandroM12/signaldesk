@@ -1,11 +1,16 @@
-import { ApiStatus } from "@/components/api-status";
+import { Suspense } from "react";
+import { IncidentDashboard } from "@/components/incident-dashboard";
 
 export default function Home() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-4 px-6">
-      <h1 className="text-3xl font-semibold tracking-tight">SignalDesk</h1>
-      <p className="text-zinc-600">Gestión y análisis de incidentes técnicos.</p>
-      <ApiStatus />
-    </main>
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          <p className="text-sm text-zinc-600">Cargando incidentes…</p>
+        </main>
+      }
+    >
+      <IncidentDashboard />
+    </Suspense>
   );
 }

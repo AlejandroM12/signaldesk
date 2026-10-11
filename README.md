@@ -58,7 +58,13 @@ pnpm db:down
 - `pnpm test` ejecuta las pruebas unitarias de la API. `pnpm test:e2e` también levanta Prisma y necesita PostgreSQL en marcha.
 - `pnpm db:down` detiene PostgreSQL y conserva el volumen de datos.
 
-La página inicial consulta `GET /api/health` y muestra si la API está disponible.
+La página inicial lista los incidentes guardados. El detalle de cada incidente muestra sus eventos en orden cronológico.
+
+`GET /api/health` informa si la API está disponible.
+
+`GET /api/incidents` devuelve incidentes paginados (`page`, `limit`) con filtros opcionales `status`, `severity`, `service` y `team`. El orden es por fecha de creación descendente. `summary` cuenta abiertos, en investigación y resueltos en toda la base, sin aplicar esos filtros.
+
+`GET /api/incidents/:id` devuelve un incidente y sus eventos ordenados por timestamp. Si no existe, responde `404`.
 
 `POST /api/events` valida un evento, lo guarda y lo asocia a un incidente. Dos eventos se agrupan solo si tienen el mismo servicio, el mismo tipo de error y sus timestamps caen dentro de `EVENT_CORRELATION_WINDOW_MINUTES` de un incidente abierto (`OPEN` o `INVESTIGATING`). Un evento de otro servicio, o el mismo error fuera de esa ventana, abre otro incidente. La causa raíz y la solución quedan vacías. Un identificador externo se deduplica junto con `source`; si se repite, la API responde `409`. Esa respuesta no repite el resultado original.
 
