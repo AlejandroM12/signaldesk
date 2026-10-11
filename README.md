@@ -31,11 +31,15 @@ Copy-Item .env.example .env
 | `POSTGRES_DB` | Docker y API | Nombre de la base local. |
 | `POSTGRES_PORT` | Docker | Puerto publicado en el host. |
 | `DATABASE_URL` | API y Prisma | Cadena de conexión. No la uses en el frontend. |
+| `EVENT_CORRELATION_WINDOW_MINUTES` | API | Minutos para asociar un evento a un incidente abierto del mismo servicio y tipo de error. Si no está definida, usa 30. |
 
 ## Comandos
 
 ```powershell
 pnpm db:up
+pnpm db:migrate -- --name add_incidents_and_events
+pnpm db:migrate:deploy
+pnpm db:seed
 pnpm dev
 pnpm dev:api
 pnpm dev:web
@@ -47,11 +51,16 @@ pnpm db:down
 ```
 
 - `pnpm db:up` levanta PostgreSQL.
+- `pnpm db:migrate` crea y aplica una migración en desarrollo. El nombre va después de `--`.
+- `pnpm db:migrate:deploy` aplica migraciones ya existentes.
+- `pnpm db:seed` carga incidentes y eventos sintéticos. Se puede ejecutar más de una vez.
 - `pnpm dev` compila los contratos y arranca la web en el puerto 3000 y la API en el puerto 3001.
 - `pnpm test` ejecuta las pruebas unitarias de la API. `pnpm test:e2e` también levanta Prisma y necesita PostgreSQL en marcha.
 - `pnpm db:down` detiene PostgreSQL y conserva el volumen de datos.
 
 La página inicial consulta `GET /api/health` y muestra si la API está disponible.
+
+`POST /api/events` valida un evento, lo guarda y lo asocia a un incidente. Dos eventos se agrupan solo si tienen el mismo servicio, el mismo tipo de error y sus timestamps caen dentro de `EVENT_CORRELATION_WINDOW_MINUTES` de un incidente abierto (`OPEN` o `INVESTIGATING`). Un evento de otro servicio, o el mismo error fuera de esa ventana, abre otro incidente. La causa raíz y la solución quedan vacías. Un identificador externo se deduplica junto con `source`; si se repite, la API responde `409`. Esa respuesta no repite el resultado original.
 
 ## Estructura
 

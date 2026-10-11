@@ -7,3 +7,61 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum IncidentStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  CLOSED
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentTeam {
+  FRONTEND
+  BACKEND
+  UNKNOWN
+}
+
+model Incident {
+  id         String           @id @default(uuid(7)) @db.Uuid
+  title      String           @db.VarChar(200)
+  status     IncidentStatus   @default(OPEN)
+  severity   IncidentSeverity @default(MEDIUM)
+  service    String           @db.VarChar(128)
+  team       IncidentTeam     @default(UNKNOWN)
+  assignee   String?          @db.VarChar(120)
+  rootCause  String?
+  resolution String?
+  createdAt  DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime         @updatedAt @db.Timestamptz(3)
+  resolvedAt DateTime?        @db.Timestamptz(3)
+  events     Event[]
+
+  @@index([service, status])
+}
+
+model Event {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  /// Origin of the event. Deduplication uses source together with externalId.
+  source     String   @db.VarChar(64)
+  /// Optional id from the origin. Null values are not deduplicated.
+  externalId String?  @db.VarChar(128)
+  incidentId String   @db.Uuid
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  service    String   @db.VarChar(128)
+  errorType  String   @db.VarChar(128)
+  message    String   @db.VarChar(4000)
+  timestamp  DateTime @db.Timestamptz(3)
+  metadata   Json?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([source, externalId])
+  @@index([incidentId])
+  @@index([service, errorType, timestamp])
+}
