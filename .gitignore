@@ -20,6 +20,7 @@ apps/api/src/generated/
 # Logs
 logs/
 *.log
+newrelic_agent.log
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*

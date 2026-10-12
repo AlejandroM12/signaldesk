@@ -3,8 +3,11 @@ packages:
   - "packages/*"
 
 allowBuilds:
+  "@newrelic/fn-inspect": true
+  "@newrelic/native-metrics": false
   "@parcel/watcher": true
   "@prisma/engines": true
   prisma: true
+  protobufjs: true
   sharp: false
   unrs-resolver: false

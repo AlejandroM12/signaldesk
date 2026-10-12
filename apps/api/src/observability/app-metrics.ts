@@ -4,6 +4,7 @@ import type {
   HttpMetricSample,
   MetricsResponse,
 } from "@signaldesk/contracts";
+import { recordAnalysisCustomMetric, recordRateLimitCustomMetric } from "./newrelic-metrics";
 
 export const APP_METRICS = Symbol("APP_METRICS");
 
@@ -160,6 +161,7 @@ export class InMemoryAppMetrics implements AppMetrics {
       if (input.providerError && PROVIDER_ERRORS.has(input.providerError)) {
         this.providerErrors[input.providerError] += 1;
       }
+      recordAnalysisCustomMetric({ ...input, durationMs });
     } catch {
       // Metrics must not affect the request.
     }
@@ -168,6 +170,7 @@ export class InMemoryAppMetrics implements AppMetrics {
   recordAnalysisQuotaRejected(): void {
     try {
       this.analysisQuotaRejected += 1;
+      recordRateLimitCustomMetric();
     } catch {
       // Metrics must not affect the request.
     }

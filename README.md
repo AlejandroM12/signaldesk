@@ -37,6 +37,9 @@ Copy-Item .env.example .env
 | `OPENAI_TIMEOUT_MS` | API | Tiempo máximo de la llamada, en milisegundos. Por defecto `20000`. |
 | `OPENAI_MAX_OUTPUT_TOKENS` | API | Tope de tokens de salida, incluidos los de razonamiento. Por defecto `1200`. |
 | `OPENAI_REASONING_EFFORT` | API | Esfuerzo de razonamiento enviado a la API. Por defecto `none`, para no gastar tokens de razonamiento. Algunos modelos rechazan `none`. |
+| `NEW_RELIC_ENABLED` | API | `true` inicia el agente de New Relic. Cualquier otro valor lo deja apagado. |
+| `NEW_RELIC_APP_NAME` | API | Nombre estable en New Relic. El valor previsto es `SignalDesk-API`. |
+| `NEW_RELIC_LICENSE_KEY` | API | Clave de licencia. Solo en el `.env` local o en el gestor de secretos. No va al frontend. |
 
 ## Comandos
 
@@ -108,6 +111,67 @@ Los contadores significan:
 Las métricas viven en la memoria del proceso. Se pierden al reiniciar la API y no se comparten entre instancias. La página inicial las muestra en la sección Operación, con una carga inicial y un botón para actualizar. Un cero es una observación real; un fallo de la consulta no se rellena con ceros inventados.
 
 Antes de un despliegue público hay que proteger `GET /api/metrics` y `GET /api/health/ready`. Un límite anónimo y un endpoint de diagnóstico abierto no alcanzan.
+
+## New Relic APM
+
+El agente oficial `newrelic` instrumenta la API NestJS: transacciones HTTP, tiempos y errores del proceso. No instrumenta Next.js. Las métricas en memoria de `GET /api/metrics` siguen siendo independientes.
+
+El agente se carga en el primer módulo de `main.ts`, antes de que NestJS importe Express y el resto de la aplicación. Antes de eso lee el `.env` del directorio de trabajo y, si hace falta, el de la raíz del monorepo. Una variable que ya esté en el proceso no se pisa. `NEW_RELIC_ENABLED` tiene que ser exactamente `true` y `NEW_RELIC_LICENSE_KEY` no puede estar vacía. Si falta la clave, la API arranca igual y no imprime ningún secreto. Las pruebas unitarias y e2e corren bajo Jest y no cargan el agente.
+
+Para dejarlo apagado, en el `.env` local:
+
+```text
+NEW_RELIC_ENABLED=false
+NEW_RELIC_APP_NAME=SignalDesk-API
+NEW_RELIC_LICENSE_KEY=
+```
+
+Para habilitarlo, pegá la clave solo en ese `.env` y cambiá `NEW_RELIC_ENABLED=true`. Después, desde PowerShell en la raíz del repositorio:
+
+```powershell
+pnpm dev:api
+```
+
+Para una sesión apagada aunque el `.env` diga `true`:
+
+```powershell
+$env:NEW_RELIC_ENABLED = "false"
+pnpm dev:api
+```
+
+El proceso de producción usa el mismo arranque:
+
+```powershell
+pnpm --filter @signaldesk/api start:prod
+```
+
+En [New Relic](https://one.newrelic.com/) abrí APM y buscá `SignalDesk-API`. Generá tráfico, por ejemplo `Invoke-RestMethod http://localhost:3001/api/health`, y esperá unos minutos. Las transacciones deberían verse con la ruta de Nest, como `GET /api/health` o `GET /api/incidents/:id`, no con el id de cada incidente. Esta guía no confirma que los datos hayan llegado: eso depende de una clave real.
+
+Si no aparece nada, revisá que la API se haya reiniciado después de cambiar el `.env`, que `NEW_RELIC_ENABLED` sea `true`, que la clave corresponda a la misma región de la cuenta y que el log de la API no diga que el agente quedó apagado. No hace falta un archivo de configuración con la clave: `apps/api/newrelic.js` la lee del entorno.
+
+No se envían cuerpos, headers, parámetros de ruta ni de query. El agente reemplaza el mensaje de las excepciones por un texto genérico y redacta ese mensaje en la primera línea del stack. El SQL de los traces queda ofuscado. El reenvío de logs está apagado, así que el texto de un análisis no sale por los logs de la aplicación. El monitoreo de navegador está apagado. Los status `400`, `401`, `403`, `404`, `409`, `422` y `429` no se cuentan como errores de APM. Las métricas nativas de V8 (`@newrelic/native-metrics`) no están habilitadas. `request.uri` puede conservar la ruta concreta, incluido el id de un incidente; el nombre de la transacción sigue siendo el patrón de Nest.
+
+Si `NEW_RELIC_ENABLED` no es exactamente `true`, o si falta la clave, el agente no arranca y la API sigue disponible. Una clave vacía no se imprime.
+
+Cuando el agente sí arrancó, cada ejecución real del análisis también suma métricas agregadas. El agente les antepone `Custom/`. Los nombres que quedan en New Relic son `Custom/SignalDesk/Analysis/Success`, `Custom/SignalDesk/Analysis/Failure`, `Custom/SignalDesk/Analysis/Failure/Timeout`, `Custom/SignalDesk/Analysis/Failure/InvalidOutput`, `Custom/SignalDesk/Analysis/Failure/Provider`, `Custom/SignalDesk/Analysis/Failure/ProviderRateLimit`, `Custom/SignalDesk/Analysis/Failure/NotConfigured`, `Custom/SignalDesk/Analysis/Discarded`, `Custom/SignalDesk/Analysis/DurationMs` y `Custom/SignalDesk/RateLimit/Rejected`. La duración usa el mismo reloj monotónico del proceso. No llevan id de incidente, prompt ni texto del análisis. Leer un análisis guardado no suma. Un fallo del agente no cambia el resultado del análisis. Esta guía no confirma que esas métricas hayan aparecido en la cuenta.
+
+Para comprobar solo la ingestión, sin análisis ni OpenAI, hay un script local. Exige `NEW_RELIC_ENABLED=true` y una clave no vacía. Registra una sola métrica fija, `SignalDesk/Probe/Ingestion`, y pide el envío final antes de salir. No forma parte de `dev`, `build` ni `start:prod`.
+
+```powershell
+pnpm --filter @signaldesk/api newrelic:probe
+```
+
+Después de un minuto:
+
+```sql
+SELECT count(newrelic.timeslice.value)
+FROM Metric
+WHERE appName = 'SignalDesk-API'
+AND metricTimesliceName = 'Custom/SignalDesk/Probe/Ingestion'
+SINCE 30 minutes ago
+```
+
+Esa consulta no confirma el envío hasta que la ejecutes con la clave real. `average(newrelic.timeslice.value)` puede quedar en 0 porque el conteo se guarda con total cero.
 
 ## Análisis asistido
 
