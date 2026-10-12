@@ -20,6 +20,16 @@ export {
   type IncidentTeam,
 } from "./incidents.js";
 
+export {
+  HEALTH_READY_PATH,
+  METRICS_PATH,
+  type AnalysisProviderErrorCounts,
+  type AnalysisQuotaSnapshot,
+  type HealthReadyResponse,
+  type HttpMetricSample,
+  type MetricsResponse,
+} from "./metrics.js";
+
 export const API_SERVICE_NAME = "signaldesk-api" as const;
 
 export const HEALTH_PATH = "/api/health" as const;

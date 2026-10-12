@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { SeverityBadge, StatusBadge } from "@/components/incident-badges";
+import { OperationsPanel } from "@/components/operations-panel";
 import { ApiError } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
 import { listIncidents } from "@/lib/incidents";
@@ -137,6 +138,8 @@ export function IncidentDashboard() {
           timeline de eventos.
         </p>
       </div>
+
+      <OperationsPanel />
 
       <section aria-label="Totales por estado">
         <dl className="grid gap-3 sm:grid-cols-3">

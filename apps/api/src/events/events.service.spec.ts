@@ -5,6 +5,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import type { CreateEventDto } from "./dto/create-event.dto";
 import { EventCorrelationService } from "./event-correlation.service";
+import type { AppMetrics } from "../observability/app-metrics";
 import { EventsService } from "./events.service";
 
 const timestamp = new Date("2026-10-11T15:00:00.000Z");
@@ -73,7 +74,18 @@ describe("EventsService", () => {
   const correlation = new EventCorrelationService({
     get: () => "30",
   } as unknown as ConfigService);
-  const service = new EventsService(prisma as never, correlation);
+  const recordEventAccepted = jest.fn<AppMetrics["recordEventAccepted"]>();
+  const recordEventDuplicate = jest.fn<AppMetrics["recordEventDuplicate"]>();
+  const metrics: AppMetrics = {
+    recordHttp: jest.fn(),
+    recordEventAccepted,
+    recordEventDuplicate,
+    recordEventRejected: jest.fn(),
+    recordAnalysis: jest.fn(),
+    recordAnalysisQuotaRejected: jest.fn(),
+    snapshot: jest.fn(),
+  };
+  const service = new EventsService(prisma as never, correlation, metrics);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -159,6 +171,9 @@ describe("EventsService", () => {
 
     expect(response.incidentCreated).toBe(true);
     expect(response.incident.id).toBe("incident-new");
+    expect(recordEventAccepted).toHaveBeenCalledTimes(1);
+    expect(recordEventAccepted).toHaveBeenCalledWith(true);
+    expect(recordEventDuplicate).not.toHaveBeenCalled();
     expect(tx.event.create).not.toHaveBeenCalled();
   });
 
@@ -170,6 +185,8 @@ describe("EventsService", () => {
     );
     expect(tx.incident.create).not.toHaveBeenCalled();
     expect(tx.event.create).not.toHaveBeenCalled();
+    expect(recordEventDuplicate).toHaveBeenCalledTimes(1);
+    expect(recordEventAccepted).not.toHaveBeenCalled();
   });
 
   it("maps a unique constraint failure to a conflict without exposing the database error", async () => {

@@ -1,9 +1,11 @@
 import {
   ConflictException,
   HttpException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
+  Optional,
 } from "@nestjs/common";
 import {
   IncidentSeverity,
@@ -11,6 +13,8 @@ import {
   IncidentTeam,
   Prisma,
 } from "../generated/prisma/client";
+import { APP_METRICS, noopAppMetrics, type AppMetrics } from "../observability/app-metrics";
+import { currentRequestId } from "../observability/request-context";
 import { PrismaService } from "../prisma/prisma.service";
 import type { CreateEventDto } from "./dto/create-event.dto";
 import type {
@@ -57,15 +61,25 @@ type StoredIncident = {
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
 
+  private readonly metrics: AppMetrics;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly correlation: EventCorrelationService,
-  ) {}
+    @Optional() @Inject(APP_METRICS) metrics?: AppMetrics,
+  ) {
+    this.metrics = metrics ?? noopAppMetrics;
+  }
 
   async ingest(dto: CreateEventDto): Promise<IngestEventResponse> {
     try {
-      return await this.prisma.$transaction((tx) => this.ingestInTransaction(tx, dto));
+      const result = await this.prisma.$transaction((tx) => this.ingestInTransaction(tx, dto));
+      this.recordMetric(() => this.metrics.recordEventAccepted(result.incidentCreated));
+      return result;
     } catch (error) {
+      if (error instanceof ConflictException) {
+        this.recordMetric(() => this.metrics.recordEventDuplicate());
+      }
       if (error instanceof HttpException) {
         throw error;
       }
@@ -74,11 +88,16 @@ export class EventsService {
         throw new ConflictException(DUPLICATE_EVENT_MESSAGE);
       }
 
-      this.logger.error(
-        "Event ingest failed",
-        error instanceof Error ? error.stack : String(error),
-      );
+      this.logger.error(`Event ingest failed requestId=${currentRequestId() ?? "none"}`);
       throw new InternalServerErrorException(PERSISTENCE_ERROR_MESSAGE);
+    }
+  }
+
+  private recordMetric(work: () => void): void {
+    try {
+      work();
+    } catch {
+      // Metrics must not affect ingest.
     }
   }
 

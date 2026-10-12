@@ -9,6 +9,7 @@ async function bootstrap(): Promise<void> {
 
   app.enableCors({
     origin: config.getOrThrow<string>("CORS_ORIGIN"),
+    exposedHeaders: ["X-Request-Id"],
   });
   app.enableShutdownHooks();
   app.useGlobalPipes(

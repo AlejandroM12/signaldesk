@@ -34,4 +34,16 @@ describe("Health (e2e)", () => {
       service: API_SERVICE_NAME,
     });
   });
+
+  it("GET /api/health/ready checks PostgreSQL without changing liveness", async () => {
+    await request(app.getHttpServer()).get(HEALTH_PATH).expect(200).expect({
+      status: "ok",
+      service: API_SERVICE_NAME,
+    });
+    await request(app.getHttpServer()).get("/api/health/ready").expect(200).expect({
+      status: "ok",
+      service: API_SERVICE_NAME,
+      database: "ok",
+    });
+  });
 });
