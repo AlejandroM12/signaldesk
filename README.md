@@ -5,7 +5,7 @@ Plataforma de gestión y análisis de incidentes técnicos. Este repositorio con
 ## Requisitos
 
 - Node.js 22.22.3 o superior, o Node.js 24.15 o superior
-- pnpm 11
+- pnpm 11.25.0
 - Docker Desktop, con Docker Compose
 
 ## Instalación

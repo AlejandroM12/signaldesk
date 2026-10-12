@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  API_PORT: "3001"
+  CORS_ORIGIN: http://localhost:3000
+  NEXT_PUBLIC_API_URL: http://localhost:3001
+  POSTGRES_USER: signaldesk
+  POSTGRES_PASSWORD: signaldesk
+  POSTGRES_DB: signaldesk
+  POSTGRES_PORT: "5432"
+  DATABASE_URL: postgresql://signaldesk:signaldesk@localhost:5432/signaldesk
+  EVENT_CORRELATION_WINDOW_MINUTES: "30"
+  OPENAI_API_KEY: ""
+  OPENAI_MODEL: gpt-6-luna
+  OPENAI_TIMEOUT_MS: "20000"
+  OPENAI_MAX_OUTPUT_TOKENS: "1200"
+  OPENAI_REASONING_EFFORT: none
+  ANALYSIS_RATE_LIMIT: "10"
+  ANALYSIS_RATE_WINDOW_MS: "60000"
+  NEW_RELIC_ENABLED: "false"
+  NEW_RELIC_APP_NAME: SignalDesk-API
+  NEW_RELIC_LICENSE_KEY: ""
+
+jobs:
+  validate:
+    name: Lint, unit tests, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.3
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build contracts
+        run: pnpm --filter @signaldesk/contracts build
+
+      - name: Generate Prisma Client
+        run: pnpm db:generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  e2e:
+    name: End-to-end tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: signaldesk
+          POSTGRES_PASSWORD: signaldesk
+          POSTGRES_DB: signaldesk
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U signaldesk -d signaldesk"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.3
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build contracts
+        run: pnpm --filter @signaldesk/contracts build
+
+      - name: Generate Prisma Client
+        run: pnpm db:generate
+
+      - name: Apply migrations
+        run: pnpm db:migrate:deploy
+
+      - name: End-to-end tests
+        run: pnpm test:e2e
