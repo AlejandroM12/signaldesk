@@ -43,6 +43,8 @@ model Incident {
   resolvedAt DateTime?        @db.Timestamptz(3)
   events     Event[]
   activities IncidentActivity[]
+  analyses   IncidentAnalysis[]
+  analysisOperations AnalysisOperation[]
 
   @@index([service, status])
 }
@@ -62,6 +64,52 @@ model IncidentActivity {
   createdAt  DateTime               @default(now()) @db.Timestamptz(3)
 
   @@index([incidentId, createdAt])
+}
+
+/// A successful assisted analysis. Failures are not stored. Never store API keys or request headers.
+model IncidentAnalysis {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  incidentId     String   @db.Uuid
+  incident       Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  provider       String   @db.VarChar(32)
+  model          String   @db.VarChar(64)
+  promptVersion  String   @db.VarChar(64)
+  result         Json
+  context        Json
+  inputTokens    Int?
+  outputTokens   Int?
+  idempotencyKey String?  @db.VarChar(80)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([incidentId, idempotencyKey])
+  @@index([incidentId, createdAt])
+}
+
+enum AnalysisOperationState {
+  RUNNING
+  FAILED
+}
+
+/// Coordinates one in-flight analysis per incident and idempotency key.
+/// A FAILED or expired lease can be taken over. This table never stores prompts or secrets.
+model AnalysisOperation {
+  id             String                 @id @default(uuid(7)) @db.Uuid
+  incidentId     String                 @db.Uuid
+  incident       Incident               @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  idempotencyKey String                 @db.VarChar(80)
+  state          AnalysisOperationState
+  leaseExpiresAt DateTime               @db.Timestamptz(3)
+  createdAt      DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime               @updatedAt @db.Timestamptz(3)
+
+  @@unique([incidentId, idempotencyKey])
+}
+
+/// One row for the whole API. The count is not per user: there is no authenticated identity.
+model AnalysisRateState {
+  id           Int      @id
+  windowStart  DateTime @db.Timestamptz(3)
+  requestCount Int
 }
 
 model Event {

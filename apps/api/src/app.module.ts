@@ -1,6 +1,7 @@
 import { type MiddlewareConsumer, Module, type NestModule, RequestMethod } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { join } from "node:path";
+import { AnalysisModule } from "./analysis/analysis.module";
 import { EventsModule } from "./events/events.module";
 import { HealthController } from "./health/health.controller";
 import { IncidentsModule } from "./incidents/incidents.module";
@@ -18,6 +19,7 @@ import { PrismaModule } from "./prisma/prisma.module";
     ObservabilityModule,
     EventsModule,
     IncidentsModule,
+    AnalysisModule,
   ],
   controllers: [HealthController],
 })

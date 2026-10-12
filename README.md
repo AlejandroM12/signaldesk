@@ -32,6 +32,11 @@ Copy-Item .env.example .env
 | `POSTGRES_PORT` | Docker | Puerto publicado en el host. |
 | `DATABASE_URL` | API y Prisma | Cadena de conexión. No la uses en el frontend. |
 | `EVENT_CORRELATION_WINDOW_MINUTES` | API | Minutos para asociar un evento a un incidente abierto del mismo servicio y tipo de error. Si no está definida, usa 30. |
+| `OPENAI_API_KEY` | API | Clave de OpenAI. Solo vive en el servidor. Si falta, el análisis responde que no está configurado y el resto de la API sigue funcionando. |
+| `OPENAI_MODEL` | API | Modelo de la llamada. Por defecto `gpt-6-luna`. |
+| `OPENAI_TIMEOUT_MS` | API | Tiempo máximo de la llamada, en milisegundos. Por defecto `20000`. |
+| `OPENAI_MAX_OUTPUT_TOKENS` | API | Tope de tokens de salida, incluidos los de razonamiento. Por defecto `1200`. |
+| `OPENAI_REASONING_EFFORT` | API | Esfuerzo de razonamiento enviado a la API. Por defecto `none`, para no gastar tokens de razonamiento. Algunos modelos rechazan `none`. |
 
 ## Comandos
 
@@ -98,11 +103,33 @@ Los contadores significan:
 - `events.accepted`: eventos persistidos. `events.duplicates`: conflictos `409`, que no cuentan como aceptados ni como rechazados. `events.rejected`: validación `400` o fallo `5xx` de `POST /api/events`.
 - `incidents.created`: incidentes nuevos creados por la ingesta. No incluye los que ya existían.
 - `analysis.succeeded`: análisis nuevos guardados después de llamar al proveedor. `analysis.failed`: llamadas al proveedor que no se guardaron. `analysis.discarded`: la llamada encontró un análisis que otra solicitud ya había guardado para la misma clave. `analysis.providerCalls` y `analysis.durationMsTotal` miden solo llamadas reales al proveedor. Recuperar un resultado ya guardado no suma ninguna de esas cifras. `analysis.quotaRejected` es el límite local, antes de llamar al proveedor. `providerErrors` separa `timeout`, `rate_limit`, `provider`, `invalid_output` y `not_configured`.
-- `analysisQuota` queda `null` hasta que exista el límite de análisis. Si esa lectura no está disponible, la interfaz no inventa un cupo.
+- `analysisQuota` lee la fila de PostgreSQL: `requestCount` dentro de la ventana y el límite configurado. Si esa lectura falla, el campo es `null` y la interfaz muestra que no está disponible.
 
 Las métricas viven en la memoria del proceso. Se pierden al reiniciar la API y no se comparten entre instancias. La página inicial las muestra en la sección Operación, con una carga inicial y un botón para actualizar. Un cero es una observación real; un fallo de la consulta no se rellena con ceros inventados.
 
-Antes de un despliegue público hay que proteger `GET /api/metrics` y `GET /api/health/ready`. Un endpoint de diagnóstico abierto no alcanza.
+Antes de un despliegue público hay que proteger `GET /api/metrics` y `GET /api/health/ready`. Un límite anónimo y un endpoint de diagnóstico abierto no alcanzan.
+
+## Análisis asistido
+
+El detalle de un incidente puede pedir una hipótesis a partir de sus eventos reales. El resultado es una ayuda de diagnóstico: no confirma la causa raíz, no completa la resolución y no cambia el estado. Esos campos solo cambian si una persona los guarda en el formulario.
+
+La web no llama a OpenAI. `POST /api/incidents/:id/analyze` arma un contexto limitado, pide una salida estructurada y, si la respuesta cita solo eventos de ese incidente, guarda el análisis. `GET /api/incidents/:id/analyses` y `GET /api/incidents/:id/analyses/:analysisId` leen lo ya guardado y no vuelven a llamar al proveedor. El módulo separa el caso de uso, el adaptador de OpenAI, el recorte del contexto y la validación. No hay herramientas, agentes ni embeddings.
+
+No hay autenticación. `ANALYSIS_RATE_LIMIT` (por defecto 10) y `ANALYSIS_RATE_WINDOW_MS` (por defecto 60000) limitan los análisis nuevos de toda la API, no de cada usuario: la aplicación no tiene identidad contra la cual contar. El cupo vive en PostgreSQL y se descuenta antes de llamar a OpenAI, así que vale entre procesos y una solicitud rechazada no genera costo. Releer el historial, el incidente o la salud no consume cupo. Tampoco lo consume repetir una clave que ya tiene un análisis guardado. Un servicio expuesto en público no debe depender solo de este límite anónimo.
+
+Si falta `OPENAI_API_KEY`, ese endpoint responde `503` y la API igual arranca. Un timeout responde `504`, un fallo del proveedor `502`, el límite de la API o del proveedor `429` y una respuesta inválida o con eventos ajenos `422`. Esos casos no se guardan como análisis exitosos. La clave no se escribe en la base, en los logs ni en la respuesta.
+
+Un análisis viejo sigue disponible después de que lleguen eventos nuevos, y la interfaz avisa que puede no describir el incidente actual. Si el contexto se recortó, también queda registrado. La misma `idempotencyKey` en el mismo incidente identifica una sola operación. PostgreSQL guarda esa operación con un arrendamiento: la otra solicitud espera y, si la primera termina bien, recibe el mismo análisis sin llamar al proveedor. La misma clave en otro incidente es otra operación y no devuelve el análisis ajeno. Si el proveedor falla, la operación queda `FAILED` y un reintento explícito con la misma clave puede volver a llamar. Si el proceso cae, el arrendamiento vence (el timeout configurado de OpenAI más 15 segundos) y un reintento posterior puede tomar la operación; no queda bloqueada para siempre. Antes de guardar, la solicitud vuelve a comprobar que sigue siendo dueña del arrendamiento. Si otro proceso ya lo tomó, no escribe el análisis ni pisa esa operación. Eso no garantiza una única llamada externa: una caída después de haber enviado la solicitud, o una llamada que sigue en curso cuando vence el arrendamiento, puede producir una segunda invocación. Sin `idempotencyKey` no hay coordinación entre solicitudes concurrentes.
+
+### Configurar OpenAI
+
+1. Creá una clave en [API keys](https://platform.openai.com/api-keys).
+2. Copiala en el `.env` local como `OPENAI_API_KEY`. No la subas al repositorio.
+3. Reiniciá la API. El modelo por defecto es `gpt-6-luna` porque la documentación de OpenAI lo presenta para tareas de alto volumen y admite salida estructurada. El 11 de octubre de 2026, la tarifa estándar de contexto corto publicada era USD 0,10 por millón de tokens de entrada y USD 0,50 por millón de salida. Esos valores cambian: revisá [el modelo](https://developers.openai.com/api/docs/models/gpt-6-luna) y [los precios](https://developers.openai.com/api/docs/pricing).
+4. Para usar otro modelo, cambiá `OPENAI_MODEL`. Si ese modelo no acepta `reasoning.effort = none`, ajustá `OPENAI_REASONING_EFFORT`. Subir el esfuerzo consume más tokens de salida.
+5. El consumo y los límites de gasto se controlan en la plataforma de OpenAI: [Usage](https://platform.openai.com/usage) y [Limits](https://platform.openai.com/settings/organization/limits). SignalDesk no calcula un precio por análisis.
+
+Las pruebas unitarias y e2e sustituyen al proveedor y no consumen tokens. Sin una clave, el botón del detalle muestra el error de configuración y el resto de la página sigue usable.
 
 ## Estructura
 

@@ -4,6 +4,7 @@ import type { IncidentDetail } from "@signaldesk/contracts";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { IncidentAnalysisPanel } from "@/components/incident-analysis";
 import { IncidentEditor } from "@/components/incident-editor";
 import { SeverityBadge, StatusBadge } from "@/components/incident-badges";
 import { ApiError } from "@/lib/api";
@@ -137,7 +138,7 @@ function IncidentWorkspace({ initial }: { initial: IncidentDetail }) {
         ) : (
           <ol className="mt-4 space-y-4 border-l border-zinc-300 pl-5">
             {incident.events.map((event) => (
-              <li key={event.id} className="rounded-xl border border-zinc-200 bg-white p-4">
+              <li id={`event-${event.id}`} key={event.id} className="scroll-mt-24 rounded-xl border border-zinc-200 bg-white p-4">
                 <time className="text-sm font-medium text-zinc-700" dateTime={event.timestamp}>
                   {formatTimestamp(event.timestamp)}
                 </time>
@@ -151,6 +152,8 @@ function IncidentWorkspace({ initial }: { initial: IncidentDetail }) {
           </ol>
         )}
       </section>
+
+      <IncidentAnalysisPanel incident={incident} />
     </>
   );
 }

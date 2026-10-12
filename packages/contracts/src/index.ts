@@ -1,4 +1,17 @@
 export {
+  ANALYSIS_CONFIDENCE_LEVELS,
+  ANALYSIS_HYPOTHESIS_TYPES,
+  type AnalysisConfidence,
+  type AnalysisContextMeta,
+  type AnalysisEvidence,
+  type AnalysisEvidenceRecord,
+  type AnalysisHypothesis,
+  type AnalysisHypothesisType,
+  type IncidentAnalysis,
+  type IncidentAnalysisListResponse,
+} from "./analysis.js";
+
+export {
   EDITABLE_INCIDENT_STATUSES,
   INCIDENT_ACTIVITY_ACTIONS,
   INCIDENT_SEVERITIES,
