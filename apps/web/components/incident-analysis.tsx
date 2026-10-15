@@ -3,7 +3,7 @@
 import type { AnalysisConfidence, AnalysisHypothesisType, IncidentAnalysis, IncidentDetail } from "@signaldesk/contracts";
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
-import { analyzeIncident, listAnalyses } from "@/lib/analyses";
+import { analysisRetryReusesKey, analyzeIncident, listAnalyses } from "@/lib/analyses";
 import { formatTimestamp } from "@/lib/format";
 
 type ListState = {
@@ -38,6 +38,7 @@ export function IncidentAnalysisPanel({ incident }: { incident: IncidentDetail }
   const [saving, setSaving] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<ApiError | null>(null);
   const savingRef = useRef(false);
+  const pendingKeyRef = useRef<{ key: string; reusable: boolean } | null>(null);
   const createdRef = useRef<IncidentAnalysis[]>([]);
   const visible: ListState =
     listState.id === incident.id && listState.attempt === attempt
@@ -80,15 +81,21 @@ export function IncidentAnalysisPanel({ incident }: { incident: IncidentDetail }
   const items = visible.status === "ready" ? visible.items : [];
   const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
 
-  async function analyze(): Promise<void> {
+  async function analyze(mode: "new" | "retry"): Promise<void> {
     if (savingRef.current) {
       return;
     }
+    const pending = pendingKeyRef.current;
+    const key = mode === "retry" && pending?.reusable ? pending.key : crypto.randomUUID();
+    pendingKeyRef.current = { key, reusable: true };
     savingRef.current = true;
     setSaving(true);
     setAnalyzeError(null);
     try {
-      const created = await analyzeIncident(incident.id, crypto.randomUUID());
+      const created = await analyzeIncident(incident.id, key);
+      if (pendingKeyRef.current?.key === key) {
+        pendingKeyRef.current = null;
+      }
       createdRef.current = [created, ...createdRef.current.filter((item) => item.id !== created.id)];
       setListState((current) => {
         const previous = current.status === "ready" && current.id === incident.id ? current.items : [];
@@ -101,7 +108,11 @@ export function IncidentAnalysisPanel({ incident }: { incident: IncidentDetail }
       });
       setSelectedId(created.id);
     } catch (error: unknown) {
-      setAnalyzeError(error instanceof ApiError ? error : new ApiError(0, "No se pudo conectar con la API."));
+      const apiError = error instanceof ApiError ? error : new ApiError(0, "No se pudo conectar con la API.");
+      if (pendingKeyRef.current?.key === key) {
+        pendingKeyRef.current = analysisRetryReusesKey(apiError.status) ? { key, reusable: true } : null;
+      }
+      setAnalyzeError(apiError);
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -115,13 +126,13 @@ export function IncidentAnalysisPanel({ incident }: { incident: IncidentDetail }
       </h2>
       <p className="mt-2 text-sm text-zinc-700">
         Las hipótesis no son un diagnóstico confirmado y no modifican la causa raíz, la resolución ni el estado.
-        La confianza es cualitativa: no es una probabilidad calibrada. Cada análisis hace una llamada a OpenAI y
-        puede generar costo; el precio depende del modelo y de los tokens.
+        La confianza es cualitativa: no es una probabilidad calibrada. Cada análisis guardado identifica su
+        proveedor.
       </p>
       <button
         type="button"
         className="mt-4 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-400"
-        onClick={() => void analyze()}
+        onClick={() => void analyze("new")}
         disabled={saving}
       >
         {saving ? "Analizando incidente…" : "Analizar incidente"}
@@ -133,7 +144,7 @@ export function IncidentAnalysisPanel({ incident }: { incident: IncidentDetail }
           <button
             type="button"
             className="mt-3 rounded-lg border border-zinc-950 px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-            onClick={() => void analyze()}
+            onClick={() => void analyze("retry")}
           >
             Reintentar
           </button>
@@ -171,7 +182,8 @@ export function IncidentAnalysisPanel({ incident }: { incident: IncidentDetail }
                   aria-pressed={selected?.id === item.id}
                   onClick={() => setSelectedId(item.id)}
                 >
-                  {formatTimestamp(item.createdAt)} · {item.model} · {item.promptVersion}
+                  {formatTimestamp(item.createdAt)} · proveedor {item.provider} · {item.model} · {item.promptVersion}
+                  {item.provider === "demo" ? " · Modo demostración" : ""}
                 </button>
               </li>
             ))}
@@ -184,6 +196,28 @@ export function IncidentAnalysisPanel({ incident }: { incident: IncidentDetail }
   );
 }
 
+function ProviderNotice({ provider }: { provider: string }) {
+  if (provider === "demo") {
+    return (
+      <div className="rounded-lg border border-amber-400 bg-white p-3">
+        <p className="text-sm font-semibold">Modo demostración</p>
+        <p className="mt-1 text-sm text-zinc-800">
+          Este resultado se generó con reglas locales sobre el contexto del incidente, no con OpenAI. Las hipótesis
+          no son conclusiones confirmadas.
+        </p>
+      </div>
+    );
+  }
+  if (provider === "openai") {
+    return (
+      <p className="text-sm text-zinc-700">
+        Este análisis usó OpenAI. Puede haber generado costo; el precio depende del modelo y de los tokens.
+      </p>
+    );
+  }
+  return null;
+}
+
 function AnalysisView({ analysis, incident }: { analysis: IncidentAnalysis; incident: IncidentDetail }) {
   const known = new Set(analysis.context.knownEventIds);
   const newerEventCount = incident.events.filter((event) => !known.has(event.id)).length;
@@ -192,11 +226,12 @@ function AnalysisView({ analysis, incident }: { analysis: IncidentAnalysis; inci
   return (
     <div className="mt-5 flex flex-col gap-4">
       <p className="text-sm text-zinc-700">
-        {formatTimestamp(analysis.createdAt)} · modelo {analysis.model} · prompt {analysis.promptVersion}
+        {`${formatTimestamp(analysis.createdAt)} · proveedor ${analysis.provider} · modelo ${analysis.model} · prompt ${analysis.promptVersion}`}
         {analysis.inputTokens !== null && analysis.outputTokens !== null
           ? ` · tokens informados por el proveedor: ${analysis.inputTokens} de entrada y ${analysis.outputTokens} de salida`
           : ""}
       </p>
+      <ProviderNotice provider={analysis.provider} />
       {limited ? (
         <p className="rounded-lg border border-amber-400 bg-white p-3 text-sm text-zinc-800">
           El contexto enviado fue limitado: se omitieron {analysis.context.omittedEventCount} eventos y se

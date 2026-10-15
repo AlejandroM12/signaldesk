@@ -32,7 +32,8 @@ Copy-Item .env.example .env
 | `POSTGRES_PORT` | Docker | Puerto publicado en el host. |
 | `DATABASE_URL` | API y Prisma | Cadena de conexión. No la uses en el frontend. |
 | `EVENT_CORRELATION_WINDOW_MINUTES` | API | Minutos para asociar un evento a un incidente abierto del mismo servicio y tipo de error. Si no está definida, usa 30. |
-| `OPENAI_API_KEY` | API | Clave de OpenAI. Solo vive en el servidor. Si falta, el análisis responde que no está configurado y el resto de la API sigue funcionando. |
+| `ANALYSIS_PROVIDER_MODE` | API | `openai` o `demo`. Si no está definida, usa OpenAI. `demo` aplica reglas locales al contexto del incidente y no llama a un modelo generativo. La falta de `OPENAI_API_KEY` no activa demo. Otro valor impide que la API arranque. |
+| `OPENAI_API_KEY` | API | Clave de OpenAI. Solo vive en el servidor. Con el modo `openai`, si falta, el análisis responde que no está configurado y el resto de la API sigue funcionando. |
 | `OPENAI_MODEL` | API | Modelo de la llamada. Por defecto `gpt-6-luna`. |
 | `OPENAI_TIMEOUT_MS` | API | Tiempo máximo de la llamada, en milisegundos. Por defecto `20000`. |
 | `OPENAI_MAX_OUTPUT_TOKENS` | API | Tope de tokens de salida, incluidos los de razonamiento. Por defecto `1200`. |
@@ -177,11 +178,13 @@ Esa consulta no confirma el envío hasta que la ejecutes con la clave real. `ave
 
 El detalle de un incidente puede pedir una hipótesis a partir de sus eventos reales. El resultado es una ayuda de diagnóstico: no confirma la causa raíz, no completa la resolución y no cambia el estado. Esos campos solo cambian si una persona los guarda en el formulario.
 
-La web no llama a OpenAI. `POST /api/incidents/:id/analyze` arma un contexto limitado, pide una salida estructurada y, si la respuesta cita solo eventos de ese incidente, guarda el análisis. `GET /api/incidents/:id/analyses` y `GET /api/incidents/:id/analyses/:analysisId` leen lo ya guardado y no vuelven a llamar al proveedor. El módulo separa el caso de uso, el adaptador de OpenAI, el recorte del contexto y la validación. No hay herramientas, agentes ni embeddings.
+La web no llama a OpenAI. `POST /api/incidents/:id/analyze` arma un contexto limitado, pide una salida estructurada y, si la respuesta cita solo eventos de ese incidente, guarda el análisis. `GET /api/incidents/:id/analyses` y `GET /api/incidents/:id/analyses/:analysisId` leen lo ya guardado y no vuelven a llamar al proveedor. El módulo separa el caso de uso, los adaptadores de proveedor, el recorte del contexto y la validación. No hay herramientas, agentes ni embeddings.
 
 No hay autenticación. `ANALYSIS_RATE_LIMIT` (por defecto 10) y `ANALYSIS_RATE_WINDOW_MS` (por defecto 60000) limitan los análisis nuevos de toda la API, no de cada usuario: la aplicación no tiene identidad contra la cual contar. El cupo vive en PostgreSQL y se descuenta antes de llamar a OpenAI, así que vale entre procesos y una solicitud rechazada no genera costo. Releer el historial, el incidente o la salud no consume cupo. Tampoco lo consume repetir una clave que ya tiene un análisis guardado. Un servicio expuesto en público no debe depender solo de este límite anónimo.
 
-Si falta `OPENAI_API_KEY`, ese endpoint responde `503` y la API igual arranca. Un timeout responde `504`, un fallo del proveedor `502`, el límite de la API o del proveedor `429` y una respuesta inválida o con eventos ajenos `422`. Esos casos no se guardan como análisis exitosos. La clave no se escribe en la base, en los logs ni en la respuesta.
+`ANALYSIS_PROVIDER_MODE` elige el adaptador. Sin la variable, o con `openai`, se usa OpenAI. El valor `demo` genera el resultado con reglas locales sobre el contexto ya armado: no llama a un modelo generativo, no inventa identificadores y se guarda con `provider` `demo` y `model` `demo-rules-v1`. La ausencia de `OPENAI_API_KEY` no cambia el modo a demo. Cualquier otro valor impide que la API arranque. El modo demo sigue pasando por la validación, el cupo y la idempotencia.
+
+Con el modo `openai`, si falta `OPENAI_API_KEY`, ese endpoint responde `503` y la API igual arranca. Un timeout responde `504`, un fallo del proveedor `502`, el límite de la API o del proveedor `429` y una respuesta inválida o con eventos ajenos `422`. Esos casos no se guardan como análisis exitosos. La clave no se escribe en la base, en los logs ni en la respuesta.
 
 Un análisis viejo sigue disponible después de que lleguen eventos nuevos, y la interfaz avisa que puede no describir el incidente actual. Si el contexto se recortó, también queda registrado. La misma `idempotencyKey` en el mismo incidente identifica una sola operación. PostgreSQL guarda esa operación con un arrendamiento: la otra solicitud espera y, si la primera termina bien, recibe el mismo análisis sin llamar al proveedor. La misma clave en otro incidente es otra operación y no devuelve el análisis ajeno. Si el proveedor falla, la operación queda `FAILED` y un reintento explícito con la misma clave puede volver a llamar. Si el proceso cae, el arrendamiento vence (el timeout configurado de OpenAI más 15 segundos) y un reintento posterior puede tomar la operación; no queda bloqueada para siempre. Antes de guardar, la solicitud vuelve a comprobar que sigue siendo dueña del arrendamiento. Si otro proceso ya lo tomó, no escribe el análisis ni pisa esa operación. Eso no garantiza una única llamada externa: una caída después de haber enviado la solicitud, o una llamada que sigue en curso cuando vence el arrendamiento, puede producir una segunda invocación. Sin `idempotencyKey` no hay coordinación entre solicitudes concurrentes.
 
@@ -193,7 +196,7 @@ Un análisis viejo sigue disponible después de que lleguen eventos nuevos, y la
 4. Para usar otro modelo, cambiá `OPENAI_MODEL`. Si ese modelo no acepta `reasoning.effort = none`, ajustá `OPENAI_REASONING_EFFORT`. Subir el esfuerzo consume más tokens de salida.
 5. El consumo y los límites de gasto se controlan en la plataforma de OpenAI: [Usage](https://platform.openai.com/usage) y [Limits](https://platform.openai.com/settings/organization/limits). SignalDesk no calcula un precio por análisis.
 
-Las pruebas unitarias y e2e sustituyen al proveedor y no consumen tokens. Sin una clave, el botón del detalle muestra el error de configuración y el resto de la página sigue usable.
+Las pruebas unitarias y e2e sustituyen al proveedor y no consumen tokens. Sin una clave, y con el modo `openai`, el botón del detalle muestra el error de configuración y el resto de la página sigue usable.
 
 ## Estructura
 
