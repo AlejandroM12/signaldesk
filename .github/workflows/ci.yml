@@ -67,6 +67,9 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      - name: Frontend tests
+        run: pnpm --filter @signaldesk/web test
+
       - name: Build
         run: pnpm build
 
