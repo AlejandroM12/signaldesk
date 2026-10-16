@@ -59,12 +59,15 @@ export function ApiStatus({ compact = false }: { compact?: boolean }) {
       : state.status === "ok"
         ? "API disponible"
         : "API no disponible";
+  const dot =
+    state.status === "ok" ? "bg-status-resolved-ink" : state.status === "error" ? "bg-severity-critical" : "bg-ink-muted";
 
   return (
-    <p className={compact ? "text-sm text-zinc-600" : "text-lg font-medium"} aria-live="polite">
-      <span className="font-medium text-zinc-950">{label}</span>
-      {state.status === "ok" ? <span> · {state.health.service}</span> : null}
-      {state.status === "error" ? <span> · {state.message}</span> : null}
+    <p className={compact ? "inline-flex items-center gap-2 text-sm text-ink-muted" : "text-lg font-medium text-ink"} aria-live="polite">
+      <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${dot}`} />
+      <span className="font-medium text-ink">{label}</span>
+      {!compact && state.status === "ok" ? <span> · {state.health.service}</span> : null}
+      {state.status === "error" ? <span className="max-w-56 truncate"> · {state.message}</span> : null}
     </p>
   );
 }

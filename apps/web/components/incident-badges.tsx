@@ -3,9 +3,7 @@ import { severityLabels, severityStyles, statusLabels, statusStyles } from "@/li
 
 export function StatusBadge({ status }: { status: IncidentStatus }) {
   return (
-    <span
-      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusStyles[status]}`}
-    >
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusStyles[status]}`}>
       {statusLabels[status]}
     </span>
   );
@@ -13,9 +11,8 @@ export function StatusBadge({ status }: { status: IncidentStatus }) {
 
 export function SeverityBadge({ severity }: { severity: IncidentSeverity }) {
   return (
-    <span
-      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${severityStyles[severity]}`}
-    >
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink">
+      <span aria-hidden="true" className={`size-2 shrink-0 rounded-[2px] ${severityStyles[severity]}`} />
       {severityLabels[severity]}
     </span>
   );

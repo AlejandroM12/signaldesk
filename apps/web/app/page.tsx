@@ -6,7 +6,7 @@ export default function Home() {
     <Suspense
       fallback={
         <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-          <p className="text-sm text-zinc-600">Cargando incidentes…</p>
+          <p className="text-sm text-ink-muted">Cargando incidentes…</p>
         </main>
       }
     >

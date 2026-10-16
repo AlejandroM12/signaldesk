@@ -1,4 +1,4 @@
-import type { IncidentSeverity, IncidentStatus, IncidentTeam } from "@signaldesk/contracts";
+import type { AnalysisConfidence, IncidentSeverity, IncidentStatus, IncidentTeam } from "@signaldesk/contracts";
 
 export const statusLabels: Record<IncidentStatus, string> = {
   OPEN: "Abierto",
@@ -21,15 +21,21 @@ export const teamLabels: Record<IncidentTeam, string> = {
 };
 
 export const statusStyles: Record<IncidentStatus, string> = {
-  OPEN: "bg-amber-100 text-amber-950",
-  INVESTIGATING: "bg-sky-100 text-sky-950",
-  RESOLVED: "bg-emerald-100 text-emerald-950",
-  CLOSED: "bg-zinc-200 text-zinc-950",
+  OPEN: "bg-status-open text-status-open-ink",
+  INVESTIGATING: "bg-status-investigating text-status-investigating-ink",
+  RESOLVED: "bg-status-resolved text-status-resolved-ink",
+  CLOSED: "bg-status-closed text-status-closed-ink",
 };
 
 export const severityStyles: Record<IncidentSeverity, string> = {
-  LOW: "bg-zinc-200 text-zinc-950",
-  MEDIUM: "bg-amber-100 text-amber-950",
-  HIGH: "bg-orange-200 text-orange-950",
-  CRITICAL: "bg-red-200 text-red-950",
+  LOW: "bg-severity-low",
+  MEDIUM: "bg-severity-medium",
+  HIGH: "bg-severity-high",
+  CRITICAL: "bg-severity-critical",
+};
+
+export const confidenceStyles: Record<AnalysisConfidence, string> = {
+  LOW: "bg-confidence-low",
+  MEDIUM: "bg-confidence-medium",
+  HIGH: "bg-confidence-high",
 };

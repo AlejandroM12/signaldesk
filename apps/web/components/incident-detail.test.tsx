@@ -118,8 +118,6 @@ describe("IncidentDetailView", () => {
     expect(field("Equipo")).toHaveTextContent("Backend");
     expect(field("Creado")).toHaveTextContent(formatTimestamp(incident.createdAt));
     expect(field("Responsable")).toHaveTextContent("Sin responsable");
-    expect(field("Causa raíz")).toHaveTextContent("Pendiente");
-    expect(field("Solución")).toHaveTextContent("Pendiente");
     expect(screen.queryByText("Resuelto", { selector: "dt" })).not.toBeInTheDocument();
 
     expect(screen.getByRole("heading", { name: "Timeline · 2 eventos" })).toBeInTheDocument();

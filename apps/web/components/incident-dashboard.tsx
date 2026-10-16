@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { SeverityBadge, StatusBadge } from "@/components/incident-badges";
+import { Button } from "@/components/ui/button";
 import { OperationsPanel } from "@/components/operations-panel";
 import { ApiError } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
@@ -130,72 +131,63 @@ export function IncidentDashboard() {
   const summary = visible.status === "ready" ? visible.data.summary : null;
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6">
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Incidentes</h1>
-        <p className="mt-2 max-w-2xl text-zinc-600">
+        <p className="mt-1 max-w-2xl text-sm text-ink-muted">
           Consultá los incidentes persistidos, filtrá el listado y abrí cada uno para ver el
           timeline de eventos.
         </p>
       </div>
 
-      <OperationsPanel />
-
-      <section aria-label="Totales por estado">
-        <dl className="grid gap-3 sm:grid-cols-3">
-          <SummaryCard label="Abiertos" value={summary?.open} />
-          <SummaryCard label="Investigando" value={summary?.investigating} />
-          <SummaryCard label="Resueltos" value={summary?.resolved} />
+      <section aria-label="Totales por estado" className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
+        <dl className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+          <SummaryStat label="Abiertos" value={summary?.open} />
+          <SummaryStat label="Investigando" value={summary?.investigating} />
+          <SummaryStat label="Resueltos" value={summary?.resolved} />
         </dl>
-        <p className="mt-2 text-sm text-zinc-500">
+        <p className="text-xs text-ink-muted">
           Totales de todos los incidentes, sin aplicar los filtros del listado.
         </p>
       </section>
 
       <form
-        className="grid gap-3 rounded-xl border border-zinc-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-6"
+        className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-3 sm:p-4 lg:flex-row lg:items-end"
         onSubmit={(event) => {
           event.preventDefault();
           const field = new FormData(event.currentTarget).get("service");
           writeQuery({ service: typeof field === "string" ? field : "", page: 1 });
         }}
       >
-        <FilterSelect
-          id="status"
-          label="Estado"
-          value={status ?? ""}
-          onChange={(value) => writeQuery({ status: value as IncidentStatus | "", page: 1 })}
-          options={INCIDENT_STATUSES.map((item) => ({ value: item, label: statusLabels[item] }))}
-        />
-        <FilterSelect
-          id="severity"
-          label="Severidad"
-          value={severity ?? ""}
-          onChange={(value) => writeQuery({ severity: value as IncidentSeverity | "", page: 1 })}
-          options={INCIDENT_SEVERITIES.map((item) => ({ value: item, label: severityLabels[item] }))}
-        />
-        <FilterSelect
-          id="team"
-          label="Equipo"
-          value={team ?? ""}
-          onChange={(value) => writeQuery({ team: value as IncidentTeam | "", page: 1 })}
-          options={INCIDENT_TEAMS.map((item) => ({ value: item, label: teamLabels[item] }))}
-        />
-        <ServiceField key={service} service={service} />
-        <div className="flex items-end gap-2 lg:col-span-1">
-          <button
-            type="submit"
-            className="rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-          >
-            Filtrar
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-            onClick={() => router.replace("/", { scroll: false })}
-          >
+        <div className="grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <FilterSelect
+            id="status"
+            label="Estado"
+            value={status ?? ""}
+            onChange={(value) => writeQuery({ status: value as IncidentStatus | "", page: 1 })}
+            options={INCIDENT_STATUSES.map((item) => ({ value: item, label: statusLabels[item] }))}
+          />
+          <FilterSelect
+            id="severity"
+            label="Severidad"
+            value={severity ?? ""}
+            onChange={(value) => writeQuery({ severity: value as IncidentSeverity | "", page: 1 })}
+            options={INCIDENT_SEVERITIES.map((item) => ({ value: item, label: severityLabels[item] }))}
+          />
+          <FilterSelect
+            id="team"
+            label="Equipo"
+            value={team ?? ""}
+            onChange={(value) => writeQuery({ team: value as IncidentTeam | "", page: 1 })}
+            options={INCIDENT_TEAMS.map((item) => ({ value: item, label: teamLabels[item] }))}
+          />
+          <ServiceField key={service} service={service} />
+        </div>
+        <div className="grid grid-cols-2 gap-2 lg:flex lg:shrink-0">
+          <Button type="submit">Filtrar</Button>
+          <Button type="button" variant="secondary" onClick={() => router.replace("/", { scroll: false })}>
             Limpiar
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -204,13 +196,9 @@ export function IncidentDashboard() {
         {visible.status === "error" ? (
           <StatusMessage>
             <p>{visible.error.message}</p>
-            <button
-              type="button"
-              className="mt-3 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-              onClick={() => setAttempt((current) => current + 1)}
-            >
+            <Button type="button" className="mt-3" onClick={() => setAttempt((current) => current + 1)}>
               Reintentar
-            </button>
+            </Button>
           </StatusMessage>
         ) : null}
         {visible.status === "ready" && visible.data.items.length === 0 ? (
@@ -218,80 +206,83 @@ export function IncidentDashboard() {
         ) : null}
         {visible.status === "ready" && visible.data.items.length > 0 ? (
           <>
-            <div className="hidden overflow-hidden rounded-xl border border-zinc-200 bg-white md:block">
-              <table className="w-full text-left text-sm">
+            <div className="hidden overflow-hidden rounded-xl border border-line bg-surface md:block">
+              <table className="w-full border-collapse text-left text-sm">
                 <caption className="sr-only">Incidentes</caption>
-                <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-600">
+                <thead className="border-b border-line text-xs text-ink-muted">
                   <tr>
-                    <th className="px-4 py-3 font-medium" scope="col">
+                    <th className="px-4 py-2.5 font-medium" scope="col">
                       Título
                     </th>
-                    <th className="px-4 py-3 font-medium" scope="col">
+                    <th className="px-4 py-2.5 font-medium" scope="col">
                       Servicio
                     </th>
-                    <th className="px-4 py-3 font-medium" scope="col">
+                    <th className="px-4 py-2.5 font-medium" scope="col">
                       Severidad
                     </th>
-                    <th className="px-4 py-3 font-medium" scope="col">
+                    <th className="px-4 py-2.5 font-medium" scope="col">
                       Estado
                     </th>
-                    <th className="px-4 py-3 font-medium" scope="col">
+                    <th className="px-4 py-2.5 font-medium" scope="col">
                       Equipo
                     </th>
-                    <th className="px-4 py-3 font-medium" scope="col">
+                    <th className="px-4 py-2.5 font-medium" scope="col">
                       Fecha
                     </th>
-                    <th className="px-4 py-3 text-right font-medium" scope="col">
+                    <th className="px-4 py-2.5 text-right font-medium" scope="col">
                       Eventos
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {visible.data.items.map((incident) => (
-                    <tr key={incident.id} className="border-b border-zinc-100 last:border-0">
+                    <tr
+                      key={incident.id}
+                      className="border-t border-line hover:bg-surface-muted focus-within:bg-surface-muted"
+                    >
                       <th className="px-4 py-3 font-medium" scope="row">
                         <Link
                           href={`/incidents/${incident.id}`}
-                          className="underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+                          className="text-ink underline-offset-4 hover:underline"
                         >
                           {incident.title}
                         </Link>
                       </th>
-                      <td className="px-4 py-3">{incident.service}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-ink-muted">{incident.service}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <SeverityBadge severity={incident.severity} />
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <StatusBadge status={incident.status} />
                       </td>
-                      <td className="px-4 py-3">{teamLabels[incident.team]}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-ink-muted">{teamLabels[incident.team]}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-ink-muted">
                         <time dateTime={incident.createdAt}>{formatTimestamp(incident.createdAt)}</time>
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums">{incident.eventCount}</td>
+                      <td className="px-4 py-3 text-right font-medium tabular-nums">{incident.eventCount}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <ul className="grid gap-3 md:hidden">
+            <ul className="grid gap-2 md:hidden">
               {visible.data.items.map((incident) => (
                 <li key={incident.id}>
                   <Link
                     href={`/incidents/${incident.id}`}
-                    className="block rounded-xl border border-zinc-200 bg-white p-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+                    className="block rounded-xl border border-line bg-surface p-4 text-ink hover:bg-surface-muted"
                   >
                     <span className="font-medium">{incident.title}</span>
-                    <span className="mt-2 flex flex-wrap gap-2">
+                    <span className="mt-2 flex flex-wrap items-center gap-2">
                       <SeverityBadge severity={incident.severity} />
                       <StatusBadge status={incident.status} />
                     </span>
-                    <span className="mt-3 block text-sm text-zinc-600">
+                    <span className="mt-3 block text-sm text-ink-muted">
                       {incident.service} · {teamLabels[incident.team]} · {incident.eventCount}{" "}
                       {incident.eventCount === 1 ? "evento" : "eventos"}
                     </span>
-                    <time className="mt-1 block text-sm text-zinc-600" dateTime={incident.createdAt}>
+                    <time className="mt-1 block text-sm text-ink-muted" dateTime={incident.createdAt}>
                       {formatTimestamp(incident.createdAt)}
                     </time>
                   </Link>
@@ -299,33 +290,37 @@ export function IncidentDashboard() {
               ))}
             </ul>
 
-            <nav className="mt-4 flex items-center justify-between gap-3" aria-label="Paginación">
-              <p className="text-sm text-zinc-600">
+            <nav className="mt-4 flex flex-wrap items-center justify-between gap-3" aria-label="Paginación">
+              <p className="text-sm text-ink-muted">
                 Página {visible.data.page} de {Math.max(visible.data.pageCount, 1)} · {visible.data.total}{" "}
                 {visible.data.total === 1 ? "incidente" : "incidentes"}
               </p>
               <div className="flex gap-2">
-                <button
+                <Button
                   type="button"
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:text-zinc-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+                  variant="secondary"
                   disabled={visible.data.page <= 1}
                   onClick={() => writeQuery({ page: visible.data.page - 1 })}
                 >
                   Anterior
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:text-zinc-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+                  variant="secondary"
                   disabled={visible.data.page >= visible.data.pageCount}
                   onClick={() => writeQuery({ page: visible.data.page + 1 })}
                 >
                   Siguiente
-                </button>
+                </Button>
               </div>
             </nav>
           </>
         ) : null}
       </section>
+
+      <div className="border-t border-line pt-6">
+        <OperationsPanel />
+      </div>
     </main>
   );
 }
@@ -334,8 +329,8 @@ function ServiceField({ service }: { service: string }) {
   const [draft, setDraft] = useState(service);
 
   return (
-    <div className="sm:col-span-2 lg:col-span-2">
-      <label htmlFor="service" className="text-sm font-medium text-zinc-700">
+    <div className="min-w-0">
+      <label htmlFor="service" className="text-sm font-medium text-ink">
         Servicio
       </label>
       <input
@@ -343,18 +338,18 @@ function ServiceField({ service }: { service: string }) {
         name="service"
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+        className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink"
         placeholder="checkout"
       />
     </div>
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: number | undefined }) {
+function SummaryStat({ label, value }: { label: string; value: number | undefined }) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4">
-      <dt className="text-sm font-medium text-zinc-500">{label}</dt>
-      <dd className="mt-1 text-3xl font-semibold tabular-nums">{value ?? "—"}</dd>
+    <div className="flex items-baseline gap-2">
+      <dt className="text-sm text-ink-muted">{label}</dt>
+      <dd className="text-base font-semibold tabular-nums text-ink">{value ?? "—"}</dd>
     </div>
   );
 }
@@ -373,15 +368,15 @@ function FilterSelect({
   options: { value: string; label: string }[];
 }) {
   return (
-    <div>
-      <label htmlFor={id} className="text-sm font-medium text-zinc-700">
+    <div className="min-w-0">
+      <label htmlFor={id} className="text-sm font-medium text-ink">
         {label}
       </label>
       <select
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+        className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink"
       >
         <option value="">Todos</option>
         {options.map((option) => (
@@ -396,6 +391,6 @@ function FilterSelect({
 
 function StatusMessage({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-6 text-sm text-zinc-700">{children}</div>
+    <div className="rounded-xl border border-line bg-surface p-6 text-sm text-ink">{children}</div>
   );
 }

@@ -9,6 +9,7 @@ import {
   type IncidentTeam,
 } from "@signaldesk/contracts";
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
 import { getIncidentActivity, updateIncident } from "@/lib/incidents";
@@ -27,7 +28,7 @@ type ActivityState =
   | { status: "error"; error: ApiError };
 
 const fieldClassName =
-  "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950";
+  "mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink";
 
 export type IncidentEditingAccess =
   | { kind: "pending" }
@@ -39,10 +40,12 @@ export function IncidentEditor({
   incident,
   onUpdated,
   access,
+  embedded = false,
 }: {
   incident: IncidentDetail;
   onUpdated: (incident: IncidentDetail) => void;
   access: IncidentEditingAccess;
+  embedded?: boolean;
 }) {
   const [form, setForm] = useState<FormState>(() => formFromIncident(incident));
   const [baseline, setBaseline] = useState(incident.updatedAt);
@@ -162,25 +165,21 @@ export function IncidentEditor({
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="rounded-xl border border-zinc-200 bg-white p-5">
+      <section className="rounded-xl border border-line bg-surface p-5">
         <h2 className="text-lg font-semibold">Edición</h2>
         {access.kind === "pending" ? (
-          <p className="mt-3 text-sm text-zinc-600">Cargando permisos de edición…</p>
+          <p className="mt-3 text-sm text-ink-muted">Cargando permisos de edición…</p>
         ) : null}
         {access.kind === "denied" ? (
-          <p className="mt-3 text-sm text-zinc-600">La edición está deshabilitada en la demo pública.</p>
+          <p className="mt-3 text-sm text-ink-muted">La edición está deshabilitada en la demo pública.</p>
         ) : null}
         {access.kind === "error" ? (
           <div className="mt-3 text-sm" role="alert">
             <p>No se pudo confirmar si la edición está habilitada.</p>
-            <p className="mt-1 text-zinc-600">{access.message}</p>
-            <button
-              type="button"
-              className="mt-3 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-              onClick={access.onRetry}
-            >
+            <p className="mt-1 text-ink-muted">{access.message}</p>
+            <Button type="button" className="mt-3" onClick={access.onRetry}>
               Reintentar
-            </button>
+            </Button>
           </div>
         ) : null}
         {editable ? (
@@ -192,7 +191,7 @@ export function IncidentEditor({
           }}
         >
           <div>
-            <label htmlFor="root-cause" className="text-sm font-medium text-zinc-700">
+            <label htmlFor="root-cause" className="text-sm font-medium text-ink">
               Causa raíz
             </label>
             <textarea
@@ -204,7 +203,7 @@ export function IncidentEditor({
             />
           </div>
           <div>
-            <label htmlFor="resolution" className="text-sm font-medium text-zinc-700">
+            <label htmlFor="resolution" className="text-sm font-medium text-ink">
               Solución
             </label>
             <textarea
@@ -217,11 +216,11 @@ export function IncidentEditor({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="team" className="text-sm font-medium text-zinc-700">
+              <label htmlFor="incident-team" className="text-sm font-medium text-ink">
                 Equipo
               </label>
               <select
-                id="team"
+                id="incident-team"
                 value={form.team}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, team: event.target.value as IncidentTeam }))
@@ -236,11 +235,11 @@ export function IncidentEditor({
               </select>
             </div>
             <div>
-              <label htmlFor="assignee" className="text-sm font-medium text-zinc-700">
+              <label htmlFor="incident-assignee" className="text-sm font-medium text-ink">
                 Responsable
               </label>
               <input
-                id="assignee"
+                id="incident-assignee"
                 value={form.assignee}
                 onChange={(event) => setForm((current) => ({ ...current, assignee: event.target.value }))}
                 className={fieldClassName}
@@ -248,121 +247,83 @@ export function IncidentEditor({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              type="submit"
-              disabled={saving || !hasChanges}
-              className="rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-            >
+            <Button type="submit" disabled={saving || !hasChanges}>
               {saving ? "Guardando…" : "Guardar"}
-            </button>
+            </Button>
             {incident.status === "OPEN" ? (
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => void submit("INVESTIGATING")}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:text-zinc-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-              >
+              <Button type="button" variant="secondary" disabled={saving} onClick={() => void submit("INVESTIGATING")}>
                 Pasar a investigación
-              </button>
+              </Button>
             ) : null}
             {incident.status === "INVESTIGATING" ? (
               <>
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => void submit("OPEN")}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:text-zinc-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-                >
+                <Button type="button" variant="secondary" disabled={saving} onClick={() => void submit("OPEN")}>
                   Devolver a abierto
-                </button>
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={requestResolve}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:text-zinc-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-                >
+                </Button>
+                <Button type="button" variant="secondary" disabled={saving} onClick={requestResolve}>
                   Resolver
-                </button>
+                </Button>
               </>
             ) : null}
             {incident.status === "RESOLVED" ? (
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => void submit("OPEN")}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:text-zinc-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-              >
+              <Button type="button" variant="secondary" disabled={saving} onClick={() => void submit("OPEN")}>
                 Reabrir
-              </button>
+              </Button>
             ) : null}
           </div>
         </form>
         ) : (
-          <ReadOnlyIncidentFields incident={incident} />
+          <ReadOnlyIncidentFields incident={incident} includeIdentity={!embedded} />
         )}
         {editable && confirmResolve ? (
-          <div className="mt-4 rounded-lg border border-zinc-300 bg-zinc-50 p-4" aria-live="polite">
+          <div className="mt-4 rounded-lg border border-line bg-surface-muted p-4" aria-live="polite">
             <h3 className="font-medium">Resolver incidente</h3>
-            <p className="mt-1 text-sm text-zinc-600">
+            <p className="mt-1 text-sm text-ink-muted">
               Se guardarán los datos del formulario y el estado pasará a resuelto.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => void submit("RESOLVED")}
-                className="rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-              >
+              <Button type="button" disabled={saving} onClick={() => void submit("RESOLVED")}>
                 Confirmar resolución
-              </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => setConfirmResolve(false)}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-              >
+              </Button>
+              <Button type="button" variant="secondary" disabled={saving} onClick={() => setConfirmResolve(false)}>
                 Cancelar
-              </button>
+              </Button>
             </div>
           </div>
         ) : null}
         <div aria-live="polite">
-          {notice ? <p className="mt-3 text-sm text-emerald-800">{notice}</p> : null}
-          {error ? <p className="mt-3 text-sm text-red-800">{error}</p> : null}
+          {notice ? <p className="mt-3 text-sm text-status-resolved-ink">{notice}</p> : null}
+          {error ? <p className="mt-3 text-sm text-severity-critical">{error}</p> : null}
         </div>
       </section>
 
       <section aria-live="polite">
         <h2 className="text-lg font-semibold">Historial</h2>
-        <p className="mt-1 text-sm text-zinc-500">Del más reciente al más antiguo. No hay usuario autenticado.</p>
+        <p className="mt-1 text-sm text-ink-muted">Del más reciente al más antiguo. No hay usuario autenticado.</p>
         {activity.status === "loading" ? (
-          <p className="mt-3 rounded-xl border border-zinc-200 bg-white p-5 text-sm">Cargando historial…</p>
+          <p className="mt-3 rounded-xl border border-line bg-surface p-5 text-sm">Cargando historial…</p>
         ) : null}
         {activity.status === "error" ? (
-          <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-5 text-sm">
+          <div className="mt-3 rounded-xl border border-line bg-surface p-5 text-sm">
             <p>{activity.error.message}</p>
-            <button
-              type="button"
-              className="mt-3 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-              onClick={() => setActivityAttempt((current) => current + 1)}
-            >
+            <Button type="button" className="mt-3" onClick={() => setActivityAttempt((current) => current + 1)}>
               Reintentar
-            </button>
+            </Button>
           </div>
         ) : null}
         {activity.status === "ready" && activity.data.items.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-zinc-200 bg-white p-5 text-sm text-zinc-600">
+          <p className="mt-3 rounded-xl border border-line bg-surface p-5 text-sm text-ink-muted">
             Todavía no hay actividad registrada.
           </p>
         ) : null}
         {activity.status === "ready" && activity.data.items.length > 0 ? (
-          <ol className="mt-3 space-y-3">
+          <ol className="mt-3 divide-y divide-line rounded-xl border border-line bg-surface">
             {activity.data.items.map((entry) => (
-              <li key={entry.id} className="rounded-xl border border-zinc-200 bg-white p-4">
-                <time className="text-sm font-medium text-zinc-700" dateTime={entry.createdAt}>
+              <li key={entry.id} className="px-4 py-3">
+                <time className="text-sm font-medium text-ink" dateTime={entry.createdAt}>
                   {formatTimestamp(entry.createdAt)}
                 </time>
-                <p className="mt-1 text-sm text-zinc-600">Actualización · Actor no disponible</p>
+                <p className="mt-1 text-sm text-ink-muted">Actualización · Actor no disponible</p>
                 <ChangeList changes={entry.changes} />
               </li>
             ))}
@@ -383,7 +344,7 @@ function ChangeList({ changes }: { changes: IncidentActivityChanges }) {
   ].filter((row) => row !== null);
 
   if (rows.length === 0) {
-    return <p className="mt-2 text-sm text-zinc-600">Sin cambios de campos.</p>;
+    return <p className="mt-2 text-sm text-ink-muted">Sin cambios de campos.</p>;
   }
 
   return (
@@ -419,13 +380,21 @@ function displayChange(label: string, value: string | null): string {
   return value;
 }
 
-function ReadOnlyIncidentFields({ incident }: { incident: IncidentDetail }) {
+function ReadOnlyIncidentFields({
+  incident,
+  includeIdentity,
+}: {
+  incident: IncidentDetail;
+  includeIdentity: boolean;
+}) {
   return (
     <dl className="mt-4 grid gap-4 sm:grid-cols-2">
       <ReadOnlyField label="Causa raíz" value={pendingText(incident.rootCause)} wide />
       <ReadOnlyField label="Solución" value={pendingText(incident.resolution)} wide />
-      <ReadOnlyField label="Equipo" value={teamLabels[incident.team]} />
-      <ReadOnlyField label="Responsable" value={incident.assignee?.trim() ? incident.assignee : "Sin responsable"} />
+      {includeIdentity ? <ReadOnlyField label="Equipo" value={teamLabels[incident.team]} /> : null}
+      {includeIdentity ? (
+        <ReadOnlyField label="Responsable" value={incident.assignee?.trim() ? incident.assignee : "Sin responsable"} />
+      ) : null}
     </dl>
   );
 }
@@ -433,7 +402,7 @@ function ReadOnlyIncidentFields({ incident }: { incident: IncidentDetail }) {
 function ReadOnlyField({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
   return (
     <div className={wide ? "sm:col-span-2" : undefined}>
-      <dt className="text-sm font-medium text-zinc-700">{label}</dt>
+      <dt className="text-sm font-medium text-ink">{label}</dt>
       <dd className="mt-1 text-sm">{value}</dd>
     </div>
   );

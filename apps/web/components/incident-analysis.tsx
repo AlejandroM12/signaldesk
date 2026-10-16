@@ -2,7 +2,9 @@
 
 import type { AnalysisConfidence, AnalysisHypothesisType, IncidentAnalysis, IncidentDetail } from "@signaldesk/contracts";
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
+import { confidenceStyles } from "@/lib/labels";
 import { analysisRetryReusesKey, analyzeIncident, listAnalyses } from "@/lib/analyses";
 import { formatTimestamp } from "@/lib/format";
 
@@ -126,73 +128,61 @@ export function IncidentAnalysisPanel({
   }
 
   return (
-    <section className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-5" aria-labelledby="ai-analysis-title" aria-busy={saving}>
+    <section className="rounded-xl border border-line bg-surface p-5" aria-labelledby="ai-analysis-title" aria-busy={saving}>
       <h2 id="ai-analysis-title" className="text-lg font-semibold">
         Análisis asistido por IA
       </h2>
-      <p className="mt-2 text-sm text-zinc-700">
+      <p className="mt-2 text-sm text-ink">
         Las hipótesis no son un diagnóstico confirmado y no modifican la causa raíz, la resolución ni el estado.
         La confianza es cualitativa: no es una probabilidad calibrada. Cada análisis guardado identifica su
         proveedor.
       </p>
       {canAnalyze ? (
-        <button
-          type="button"
-          className="mt-4 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-400"
-          onClick={() => void analyze("new")}
-          disabled={saving}
-        >
+        <Button type="button" className="mt-4" onClick={() => void analyze("new")} disabled={saving}>
           {saving ? "Analizando incidente…" : "Analizar incidente"}
-        </button>
+        </Button>
       ) : null}
 
       {canAnalyze && analyzeError ? (
-        <div className="mt-4 rounded-lg border border-zinc-300 bg-white p-4" role="alert">
-          <p className="text-sm text-zinc-800">{analyzeError.message}</p>
-          <button
-            type="button"
-            className="mt-3 rounded-lg border border-zinc-950 px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-            onClick={() => void analyze("retry")}
-          >
+        <div className="mt-4 rounded-lg border border-line bg-surface p-4" role="alert">
+          <p className="text-sm text-ink">{analyzeError.message}</p>
+          <Button type="button" variant="secondary" className="mt-3" onClick={() => void analyze("retry")}>
             Reintentar
-          </button>
+          </Button>
         </div>
       ) : null}
 
-      {visible.status === "loading" ? <p className="mt-4 text-sm text-zinc-700">Cargando análisis…</p> : null}
+      {visible.status === "loading" ? <p className="mt-4 text-sm text-ink">Cargando análisis…</p> : null}
       {visible.status === "error" ? (
         <div className="mt-4" role="alert">
-          <p className="text-sm text-zinc-800">{visible.error.message}</p>
-          <button
-            type="button"
-            className="mt-3 rounded-lg border border-zinc-950 px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-            onClick={() => setAttempt((current) => current + 1)}
-          >
+          <p className="text-sm text-ink">{visible.error.message}</p>
+          <Button type="button" variant="secondary" className="mt-3" onClick={() => setAttempt((current) => current + 1)}>
             Reintentar carga
-          </button>
+          </Button>
         </div>
       ) : null}
 
       {visible.status === "ready" && items.length === 0 ? (
-        <p className="mt-4 text-sm text-zinc-700">Todavía no hay análisis para este incidente.</p>
+        <p className="mt-4 text-sm text-ink">Todavía no hay análisis para este incidente.</p>
       ) : null}
 
       {items.length > 1 ? (
         <div className="mt-4">
           <h3 className="text-sm font-semibold">Historial</h3>
-          <p className="mt-1 text-sm text-zinc-700">Del más reciente al más antiguo. Un análisis anterior puede no incluir eventos posteriores.</p>
+          <p className="mt-1 text-sm text-ink">Del más reciente al más antiguo. Un análisis anterior puede no incluir eventos posteriores.</p>
           <ul className="mt-2 flex flex-col gap-2">
             {items.map((item) => (
               <li key={item.id}>
-                <button
+                <Button
                   type="button"
-                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+                  variant="secondary"
+                  className="w-full text-left aria-pressed:border-action"
                   aria-pressed={selected?.id === item.id}
                   onClick={() => setSelectedId(item.id)}
                 >
                   {formatTimestamp(item.createdAt)} · proveedor {item.provider} · {item.model} · {item.promptVersion}
                   {item.provider === "demo" ? " · Modo demostración" : ""}
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
@@ -207,9 +197,9 @@ export function IncidentAnalysisPanel({
 function ProviderNotice({ provider }: { provider: string }) {
   if (provider === "demo") {
     return (
-      <div className="rounded-lg border border-amber-400 bg-white p-3">
+      <div className="rounded-lg bg-surface-muted p-3">
         <p className="text-sm font-semibold">Modo demostración</p>
-        <p className="mt-1 text-sm text-zinc-800">
+        <p className="mt-1 text-sm text-ink">
           Este resultado se generó con reglas locales sobre el contexto del incidente, no con OpenAI. Las hipótesis
           no son conclusiones confirmadas.
         </p>
@@ -218,7 +208,7 @@ function ProviderNotice({ provider }: { provider: string }) {
   }
   if (provider === "openai") {
     return (
-      <p className="text-sm text-zinc-700">
+      <p className="text-sm text-ink">
         Este análisis usó OpenAI. Puede haber generado costo; el precio depende del modelo y de los tokens.
       </p>
     );
@@ -233,7 +223,7 @@ function AnalysisView({ analysis, incident }: { analysis: IncidentAnalysis; inci
 
   return (
     <div className="mt-5 flex flex-col gap-4">
-      <p className="text-sm text-zinc-700">
+      <p className="text-sm text-ink">
         {`${formatTimestamp(analysis.createdAt)} · proveedor ${analysis.provider} · modelo ${analysis.model} · prompt ${analysis.promptVersion}`}
         {analysis.inputTokens !== null && analysis.outputTokens !== null
           ? ` · tokens informados por el proveedor: ${analysis.inputTokens} de entrada y ${analysis.outputTokens} de salida`
@@ -241,13 +231,13 @@ function AnalysisView({ analysis, incident }: { analysis: IncidentAnalysis; inci
       </p>
       <ProviderNotice provider={analysis.provider} />
       {limited ? (
-        <p className="rounded-lg border border-amber-400 bg-white p-3 text-sm text-zinc-800">
+        <p className="rounded-lg bg-surface-muted p-3 text-sm text-ink">
           El contexto enviado fue limitado: se omitieron {analysis.context.omittedEventCount} eventos y se
           acortaron {analysis.context.truncatedEventIds.length}.
         </p>
       ) : null}
       {newerEventCount > 0 ? (
-        <p className="rounded-lg border border-amber-400 bg-white p-3 text-sm text-zinc-800">
+        <p className="rounded-lg bg-surface-muted p-3 text-sm text-ink">
           Después de este análisis se registraron {newerEventCount} eventos que no formaron parte de él. No
           representa necesariamente el estado actual del incidente.
         </p>
@@ -255,21 +245,24 @@ function AnalysisView({ analysis, incident }: { analysis: IncidentAnalysis; inci
 
       <div>
         <h3 className="text-sm font-semibold">Resumen de lo observado</h3>
-        <p className="mt-1 text-sm text-zinc-800">{analysis.summary}</p>
+        <p className="mt-1 text-sm text-ink">{analysis.summary}</p>
       </div>
 
       <div>
         <h3 className="text-sm font-semibold">Hipótesis</h3>
         {analysis.hypotheses.length === 0 ? (
-          <p className="mt-1 text-sm text-zinc-700">No hay hipótesis fundamentadas con los eventos disponibles.</p>
+          <p className="mt-1 text-sm text-ink">No hay hipótesis fundamentadas con los eventos disponibles.</p>
         ) : (
           <ul className="mt-2 flex flex-col gap-3">
             {analysis.hypotheses.map((hypothesis) => (
-              <li key={`${hypothesis.title}-${hypothesis.type}`} className="rounded-lg border border-dashed border-amber-400 bg-white p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Hipótesis, no es un hecho observado</p>
+              <li key={`${hypothesis.title}-${hypothesis.type}`} className="rounded-lg bg-surface-muted p-4">
+                <p className="text-xs font-medium text-ink-muted">Hipótesis, no es un hecho observado</p>
                 <h4 className="mt-1 font-medium">{hypothesis.title}</h4>
-                <p className="mt-1 text-sm text-zinc-700">
-                  {hypothesisLabels[hypothesis.type]} · Confianza cualitativa {confidenceLabels[hypothesis.confidence]}
+                <p className="mt-1 flex items-center gap-2 text-sm text-ink">
+                  <span aria-hidden="true" className={`size-2 shrink-0 rounded-[2px] ${confidenceStyles[hypothesis.confidence]}`} />
+                  <span>
+                    {hypothesisLabels[hypothesis.type]} · Confianza cualitativa {confidenceLabels[hypothesis.confidence]}
+                  </span>
                 </p>
                 <p className="mt-2 text-sm">{hypothesis.explanation}</p>
                 <EvidenceList title="Evidencia citada" items={hypothesis.supportingEvidence} />
@@ -288,7 +281,7 @@ function AnalysisView({ analysis, incident }: { analysis: IncidentAnalysis; inci
       <TextList title="Próximos pasos de diagnóstico" items={analysis.recommendedActions} empty="Sin pasos recomendados." />
       <div>
         <h3 className="text-sm font-semibold">Limitaciones</h3>
-        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-zinc-800">
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink">
           <li>La confianza no está calibrada y no demuestra causalidad.</li>
           {analysis.limitations.map((item) => (
             <li key={item}>{item}</li>
@@ -311,18 +304,18 @@ function EvidenceList({
   return (
     <div className="mt-3">
       <h5 className="text-sm font-medium">{title}</h5>
-      {items.length === 0 && empty ? <p className="mt-1 text-sm text-zinc-700">{empty}</p> : null}
+      {items.length === 0 && empty ? <p className="mt-1 text-sm text-ink">{empty}</p> : null}
       {items.length > 0 ? (
         <ul className="mt-1 flex flex-col gap-2">
           {items.map((item) => (
             <li key={`${item.eventId}-${item.note}`} className="text-sm">
               <a
                 href={`#event-${item.eventId}`}
-                className="font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+                className="font-medium text-ink underline-offset-4 hover:underline"
               >
                 Ver evento
               </a>
-              <span className="text-zinc-700"> · {item.note}</span>
+              <span className="text-ink"> · {item.note}</span>
             </li>
           ))}
         </ul>
@@ -336,9 +329,9 @@ function TextList({ title, items, empty }: { title: string; items: string[]; emp
     <div>
       <h3 className="text-sm font-semibold">{title}</h3>
       {items.length === 0 ? (
-        <p className="mt-1 text-sm text-zinc-700">{empty}</p>
+        <p className="mt-1 text-sm text-ink">{empty}</p>
       ) : (
-        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-zinc-800">
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink">
           {items.map((item) => (
             <li key={item}>{item}</li>
           ))}

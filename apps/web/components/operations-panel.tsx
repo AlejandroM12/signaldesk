@@ -1,7 +1,8 @@
 "use client";
 
 import type { MetricsResponse } from "@signaldesk/contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import { getApiCapabilities } from "@/lib/capabilities";
 import { getMetrics } from "@/lib/metrics";
@@ -113,105 +114,129 @@ export function OperationsPanel() {
           <h2 id="operacion-title" className="text-xl font-semibold tracking-tight">
             Operación
           </h2>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-600">
+          <p className="mt-1 max-w-2xl text-sm text-ink-muted">
             Contadores del proceso actual de la API. No son un historial persistente: se reinician al
             reiniciar la API y no se comparten entre instancias.
           </p>
         </div>
         {metricsAllowed || visibleCapabilities.status === "unconfigured" ? (
-          <button
-            type="button"
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-            onClick={() => setMetricsAttempt((current) => current + 1)}
-          >
+          <Button type="button" variant="secondary" onClick={() => setMetricsAttempt((current) => current + 1)}>
             Actualizar
-          </button>
+          </Button>
         ) : null}
       </div>
 
       <div className="mt-4" aria-live="polite" aria-busy={loading}>
         {loading ? (
-          <p className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-600">
+          <p className="rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">
             Cargando métricas…
           </p>
         ) : null}
         {visibleCapabilities.status === "blocked" ? (
-          <p className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
+          <p className="rounded-xl border border-line bg-surface p-4 text-sm text-ink">
             {PUBLIC_METRICS_MESSAGE}
           </p>
         ) : null}
         {visibleCapabilities.status === "unconfigured" ? (
-          <div className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
+          <div className="rounded-xl border border-line bg-surface p-4 text-sm text-ink">
             <p>Falta la variable NEXT_PUBLIC_API_URL.</p>
-            <button
-              type="button"
-              className="mt-3 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-              onClick={() => setMetricsAttempt((current) => current + 1)}
-            >
+            <Button type="button" className="mt-3" onClick={() => setMetricsAttempt((current) => current + 1)}>
               Reintentar
-            </button>
+            </Button>
           </div>
         ) : null}
         {visibleCapabilities.status === "error" ? (
-          <div className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
+          <div className="rounded-xl border border-line bg-surface p-4 text-sm text-ink">
             <p>{visibleCapabilities.message}</p>
-            <button
-              type="button"
-              className="mt-3 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-              onClick={() => setCapabilityAttempt((current) => current + 1)}
-            >
+            <Button type="button" className="mt-3" onClick={() => setCapabilityAttempt((current) => current + 1)}>
               Reintentar
-            </button>
+            </Button>
           </div>
         ) : null}
         {metricsError ? (
-          <div className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
+          <div className="rounded-xl border border-line bg-surface p-4 text-sm text-ink">
             <p>{metricsError}</p>
-            <button
-              type="button"
-              className="mt-3 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-              onClick={() => setMetricsAttempt((current) => current + 1)}
-            >
+            <Button type="button" className="mt-3" onClick={() => setMetricsAttempt((current) => current + 1)}>
               Reintentar
-            </button>
+            </Button>
           </div>
         ) : null}
         {data ? (
-          <>
+          <div className="overflow-hidden rounded-xl border border-line bg-surface">
             {empty ? (
-              <p className="mb-3 text-sm text-zinc-600">Todavía no hay observaciones en este proceso.</p>
+              <p className="px-4 py-3 text-sm text-ink-muted">Todavía no hay observaciones en este proceso.</p>
             ) : null}
-            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <MetricCard label="Solicitudes HTTP" value={String(data.http.requests)} />
-              <MetricCard label="Errores HTTP" value={String(data.http.errors)} />
-              <MetricCard
+            <MetricGroup title="HTTP">
+              <Metric label="Solicitudes HTTP" value={String(data.http.requests)} />
+              <Metric
+                label="Errores HTTP"
+                value={String(data.http.errors)}
+                tone={data.http.errors > 0 ? "alert" : "quiet"}
+              />
+              <Metric
                 label="Duración media HTTP"
                 value={formatMean(data.http.durationMsTotal, data.http.requests)}
               />
-              <MetricCard label="Eventos aceptados" value={String(data.events.accepted)} />
-              <MetricCard label="Eventos duplicados" value={String(data.events.duplicates)} />
-              <MetricCard label="Eventos rechazados" value={String(data.events.rejected)} />
-              <MetricCard label="Incidentes creados" value={String(data.incidents.created)} />
-              <MetricCard label="Análisis exitosos" value={String(data.analysis.succeeded)} />
-              <MetricCard label="Análisis fallidos" value={String(data.analysis.failed)} />
-              <MetricCard
+            </MetricGroup>
+            <MetricGroup title="Eventos">
+              <Metric label="Eventos aceptados" value={String(data.events.accepted)} />
+              <Metric
+                label="Eventos duplicados"
+                value={String(data.events.duplicates)}
+                tone={data.events.duplicates > 0 ? "alert" : "quiet"}
+              />
+              <Metric
+                label="Eventos rechazados"
+                value={String(data.events.rejected)}
+                tone={data.events.rejected > 0 ? "alert" : "quiet"}
+              />
+              <Metric label="Incidentes creados" value={String(data.incidents.created)} />
+            </MetricGroup>
+            <MetricGroup title="Análisis">
+              <Metric label="Análisis exitosos" value={String(data.analysis.succeeded)} />
+              <Metric
+                label="Análisis fallidos"
+                value={String(data.analysis.failed)}
+                tone={data.analysis.failed > 0 ? "alert" : "quiet"}
+              />
+              <Metric
                 label="Duración media del análisis"
                 value={formatMean(data.analysis.durationMsTotal, data.analysis.providerCalls)}
               />
-              <MetricCard label="Cupo de análisis" value={formatQuota(data.analysisQuota)} />
-            </dl>
-          </>
+              <Metric label="Cupo de análisis" value={formatQuota(data.analysisQuota)} />
+            </MetricGroup>
+          </div>
         ) : null}
       </div>
     </section>
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+function MetricGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4">
-      <dt className="text-sm font-medium text-zinc-500">{label}</dt>
-      <dd className="mt-1 text-2xl font-semibold tabular-nums">{value}</dd>
+    <div className="grid gap-3 border-t border-line px-4 py-3 first:border-t-0 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-baseline">
+      <h3 className="text-sm font-medium text-ink">{title}</h3>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">{children}</dl>
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: "neutral" | "quiet" | "alert";
+}) {
+  const valueTone =
+    tone === "alert" ? "text-severity-critical" : tone === "quiet" ? "text-ink-muted" : "text-ink";
+
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-ink-muted">{label}</dt>
+      <dd className={`mt-0.5 text-lg font-semibold tabular-nums ${valueTone}`}>{value}</dd>
     </div>
   );
 }

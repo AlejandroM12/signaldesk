@@ -1,1 +1,152 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+  --canvas: #f6f6f7;
+  --surface: #ffffff;
+  --surface-muted: #f3f3f4;
+  --line: #e4e4e7;
+  --ink: #18181b;
+  --ink-muted: #52525b;
+  --action: #18181b;
+  --action-ink: #fafafa;
+  --status-open: #fef3c7;
+  --status-open-ink: #78350f;
+  --status-investigating: #e0f2fe;
+  --status-investigating-ink: #0c4a6e;
+  --status-resolved: #d1fae5;
+  --status-resolved-ink: #065f46;
+  --status-closed: #e4e4e7;
+  --status-closed-ink: #3f3f46;
+  --severity-low: #71717a;
+  --severity-medium: #b45309;
+  --severity-high: #c2410c;
+  --severity-critical: #b91c1c;
+  --confidence-low: #71717a;
+  --confidence-medium: #b45309;
+  --confidence-high: #047857;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --canvas: #101114;
+  --surface: #18181b;
+  --surface-muted: #202024;
+  --line: #313136;
+  --ink: #f4f4f5;
+  --ink-muted: #a1a1aa;
+  --action: #f4f4f5;
+  --action-ink: #18181b;
+  --status-open: #3a2a12;
+  --status-open-ink: #f6d48a;
+  --status-investigating: #0b2c40;
+  --status-investigating-ink: #c5e8fb;
+  --status-resolved: #052e26;
+  --status-resolved-ink: #b6f3d8;
+  --status-closed: #27272a;
+  --status-closed-ink: #e4e4e7;
+  --severity-low: #a1a1aa;
+  --severity-medium: #fbbf24;
+  --severity-high: #fb923c;
+  --severity-critical: #fca5a5;
+  --confidence-low: #a1a1aa;
+  --confidence-medium: #fbbf24;
+  --confidence-high: #6ee7b7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    color-scheme: dark;
+    --canvas: #101114;
+    --surface: #18181b;
+    --surface-muted: #202024;
+    --line: #313136;
+    --ink: #f4f4f5;
+    --ink-muted: #a1a1aa;
+    --action: #f4f4f5;
+    --action-ink: #18181b;
+    --status-open: #3a2a12;
+    --status-open-ink: #f6d48a;
+    --status-investigating: #0b2c40;
+    --status-investigating-ink: #c5e8fb;
+    --status-resolved: #052e26;
+    --status-resolved-ink: #b6f3d8;
+    --status-closed: #27272a;
+    --status-closed-ink: #e4e4e7;
+    --severity-low: #a1a1aa;
+    --severity-medium: #fbbf24;
+    --severity-high: #fb923c;
+    --severity-critical: #fca5a5;
+    --confidence-low: #a1a1aa;
+    --confidence-medium: #fbbf24;
+    --confidence-high: #6ee7b7;
+  }
+}
+
+@theme inline {
+  --font-sans: var(--font-source-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-source-code), ui-monospace, monospace;
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-action: var(--action);
+  --color-action-ink: var(--action-ink);
+  --color-status-open: var(--status-open);
+  --color-status-open-ink: var(--status-open-ink);
+  --color-status-investigating: var(--status-investigating);
+  --color-status-investigating-ink: var(--status-investigating-ink);
+  --color-status-resolved: var(--status-resolved);
+  --color-status-resolved-ink: var(--status-resolved-ink);
+  --color-status-closed: var(--status-closed);
+  --color-status-closed-ink: var(--status-closed-ink);
+  --color-severity-low: var(--severity-low);
+  --color-severity-medium: var(--severity-medium);
+  --color-severity-high: var(--severity-high);
+  --color-severity-critical: var(--severity-critical);
+  --color-confidence-low: var(--confidence-low);
+  --color-confidence-medium: var(--confidence-medium);
+  --color-confidence-high: var(--confidence-high);
+}
+
+@theme {
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.75rem;
+  --text-3xl--line-height: 2.125rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.625rem;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  time,
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono), ui-monospace, monospace;
+  }
+
+  :where(a, button, input, select, textarea):focus-visible {
+    outline: 2px solid var(--action);
+    outline-offset: 2px;
+  }
+}
