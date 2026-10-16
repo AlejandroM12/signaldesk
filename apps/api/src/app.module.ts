@@ -8,6 +8,7 @@ import { IncidentsModule } from "./incidents/incidents.module";
 import { ObservabilityModule } from "./observability/observability.module";
 import { RequestContextMiddleware } from "./observability/request-context.middleware";
 import { PrismaModule } from "./prisma/prisma.module";
+import { PublicDemoModule } from "./public-demo/public-demo.module";
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { PrismaModule } from "./prisma/prisma.module";
       envFilePath: [join(process.cwd(), ".env"), join(process.cwd(), "../../.env")],
     }),
     PrismaModule,
+    PublicDemoModule,
     ObservabilityModule,
     EventsModule,
     IncidentsModule,

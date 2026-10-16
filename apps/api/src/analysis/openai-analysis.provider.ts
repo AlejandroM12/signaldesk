@@ -1,9 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import OpenAI from "openai";
+import { allowsOpenAiClient } from "./analysis-provider-mode";
 import { AnalysisProviderFailure } from "./analysis-errors";
 import { ANALYSIS_OUTPUT_NAME, ANALYSIS_OUTPUT_SCHEMA } from "./analysis-output-schema";
 import type { AnalysisProvider, AnalysisProviderRequest, AnalysisProviderResult } from "./analysis-provider";
+import * as openAiClient from "./openai-client";
 import { readOpenAiSettings, type OpenAiSettings } from "./openai-config";
 
 @Injectable()
@@ -19,13 +21,10 @@ export class OpenAiAnalysisProvider implements AnalysisProvider {
       OPENAI_MAX_OUTPUT_TOKENS: config.get<string>("OPENAI_MAX_OUTPUT_TOKENS"),
       OPENAI_REASONING_EFFORT: config.get<string>("OPENAI_REASONING_EFFORT"),
     });
-    this.client = this.settings.apiKey
-      ? new OpenAI({
-          apiKey: this.settings.apiKey,
-          timeout: this.settings.timeoutMs,
-          maxRetries: 0,
-        })
-      : null;
+    this.client =
+      allowsOpenAiClient(config.get<string>("ANALYSIS_PROVIDER_MODE")) && this.settings.apiKey
+        ? openAiClient.createOpenAiClient(this.settings)
+        : null;
   }
 
   isConfigured(): boolean {

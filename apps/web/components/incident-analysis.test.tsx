@@ -101,7 +101,7 @@ describe("IncidentAnalysisPanel", () => {
     const user = userEvent.setup();
     vi.mocked(analyzeIncident).mockResolvedValue(savedAnalysis);
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
     await user.click(screen.getByRole("button", { name: "Analizar incidente" }));
 
     expect(await screen.findByText("El checkout agotó el tiempo.")).toBeInTheDocument();
@@ -115,7 +115,7 @@ describe("IncidentAnalysisPanel", () => {
       .mockRejectedValueOnce(new ApiError(0, "No se pudo conectar con la API."))
       .mockResolvedValueOnce(savedAnalysis);
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
     await user.click(screen.getByRole("button", { name: "Analizar incidente" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("No se pudo conectar con la API.");
 
@@ -136,7 +136,7 @@ describe("IncidentAnalysisPanel", () => {
       )
       .mockResolvedValueOnce(savedAnalysis);
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
     await user.click(screen.getByRole("button", { name: "Analizar incidente" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Reintentá con la misma clave.");
     await user.click(screen.getByRole("button", { name: "Reintentar" }));
@@ -153,7 +153,7 @@ describe("IncidentAnalysisPanel", () => {
       .mockRejectedValueOnce(new ApiError(500, "No se pudo guardar el análisis."))
       .mockResolvedValueOnce(savedAnalysis);
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
     await user.click(screen.getByRole("button", { name: "Analizar incidente" }));
     expect(await screen.findByText("No se pudo guardar el análisis.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Reintentar" }));
@@ -170,7 +170,7 @@ describe("IncidentAnalysisPanel", () => {
       .mockRejectedValueOnce(new ApiError(429, "Se alcanzó el límite de análisis de esta API. Probá más tarde."))
       .mockResolvedValueOnce(savedAnalysis);
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
     await user.click(screen.getByRole("button", { name: "Analizar incidente" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Probá más tarde.");
     await user.click(screen.getByRole("button", { name: "Reintentar" }));
@@ -189,7 +189,7 @@ describe("IncidentAnalysisPanel", () => {
       )
       .mockResolvedValueOnce(savedAnalysis);
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
     await user.click(screen.getByRole("button", { name: "Analizar incidente" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Falta OPENAI_API_KEY");
     await user.click(screen.getByRole("button", { name: "Reintentar" }));
@@ -208,7 +208,7 @@ describe("IncidentAnalysisPanel", () => {
       )
       .mockResolvedValueOnce(savedAnalysis);
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
     await user.click(screen.getByRole("button", { name: "Analizar incidente" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("No se guardó ningún análisis.");
     await user.click(screen.getByRole("button", { name: "Reintentar" }));
@@ -225,7 +225,7 @@ describe("IncidentAnalysisPanel", () => {
       .mockRejectedValueOnce(new ApiError(0, "No se pudo conectar con la API."))
       .mockResolvedValueOnce(savedAnalysis);
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
     await user.click(screen.getByRole("button", { name: "Analizar incidente" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Analizar incidente" }));
@@ -243,7 +243,7 @@ describe("IncidentAnalysisPanel", () => {
       .mockResolvedValueOnce(savedAnalysis)
       .mockResolvedValueOnce({ ...savedAnalysis, id: "ana-2", summary: "Segundo análisis." });
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
     await user.click(screen.getByRole("button", { name: "Analizar incidente" }));
     expect(await screen.findByText("El checkout agotó el tiempo.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Analizar incidente" }));
@@ -265,7 +265,7 @@ describe("IncidentAnalysisPanel", () => {
         }),
     );
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
     await user.click(screen.getByRole("button", { name: "Analizar incidente" }));
 
     const saving = screen.getByRole("button", { name: "Analizando incidente…" });
@@ -278,7 +278,7 @@ describe("IncidentAnalysisPanel", () => {
   });
 
   it("does not assume a provider before an analysis exists", async () => {
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
 
     expect(await screen.findByText("Todavía no hay análisis para este incidente.")).toBeInTheDocument();
     expect(screen.queryByText("Modo demostración")).not.toBeInTheDocument();
@@ -298,7 +298,7 @@ describe("IncidentAnalysisPanel", () => {
       ],
     });
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
 
     expect(await screen.findByText("Modo demostración")).toBeInTheDocument();
     expect(screen.getByText(/Este resultado se generó con reglas locales/)).toBeInTheDocument();
@@ -311,7 +311,7 @@ describe("IncidentAnalysisPanel", () => {
   it("keeps the usual presentation for an OpenAI analysis", async () => {
     vi.mocked(listAnalyses).mockResolvedValue({ items: [savedAnalysis] });
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
 
     expect(await screen.findByText("El checkout agotó el tiempo.")).toBeInTheDocument();
     expect(screen.getByText(/proveedor openai/)).toBeInTheDocument();
@@ -336,7 +336,7 @@ describe("IncidentAnalysisPanel", () => {
       ],
     });
 
-    render(<IncidentAnalysisPanel incident={incident} />);
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze />);
 
     const demoButton = await screen.findByRole("button", { name: /proveedor demo/ });
     const openaiButton = screen.getByRole("button", { name: /proveedor openai/ });
@@ -357,5 +357,17 @@ describe("IncidentAnalysisPanel", () => {
 
     expect(screen.getByText(/Este resultado se generó con reglas locales/)).toBeInTheDocument();
     expect(screen.queryByText(/Este análisis usó OpenAI/)).not.toBeInTheDocument();
+  });
+
+  it("hides a new analysis when the API does not allow it and keeps stored history", async () => {
+    vi.mocked(listAnalyses).mockResolvedValue({
+      items: [{ ...savedAnalysis, provider: "demo", model: "demo-rules-v1" }],
+    });
+
+    render(<IncidentAnalysisPanel incident={incident} canAnalyze={false} />);
+
+    expect(await screen.findByText(/proveedor demo/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Analizar incidente" })).not.toBeInTheDocument();
+    expect(analyzeIncident).not.toHaveBeenCalled();
   });
 });

@@ -97,6 +97,7 @@ describe("AnalysisService", () => {
       findMany: jest.fn(),
       findFirst: jest.fn(),
       create: jest.fn(),
+      deleteMany: jest.fn(),
     },
     analysisOperation: {
       create: jest.fn(),
@@ -109,6 +110,7 @@ describe("AnalysisService", () => {
     },
     $transaction: jest.fn(async (work: (tx: typeof prisma) => Promise<unknown>) => work(prisma)),
     $queryRaw: jest.fn(),
+    $executeRaw: jest.fn(),
   };
   const isConfigured = jest.fn<AnalysisProvider["isConfigured"]>(() => true);
   const analyze = jest.fn<AnalysisProvider["analyze"]>();
@@ -138,6 +140,9 @@ describe("AnalysisService", () => {
     prisma.analysisOperation.findUnique.mockResolvedValue(null);
     prisma.analysisOperation.updateMany.mockResolvedValue({ count: 1 });
     prisma.analysisOperation.deleteMany.mockResolvedValue({ count: 1 });
+    prisma.incidentAnalysis.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.incidentAnalysis.findMany.mockResolvedValue([]);
+    prisma.$executeRaw.mockResolvedValue(0);
     prisma.$queryRaw.mockResolvedValue([{ windowStart: new Date(), requestCount: 0 }]);
     prisma.incidentAnalysis.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
       id: "analysis-1",
@@ -275,6 +280,31 @@ describe("AnalysisService", () => {
     expect(analyze).not.toHaveBeenCalled();
     expect(recordAnalysis).not.toHaveBeenCalled();
     expect(recordAnalysisQuotaRejected).toHaveBeenCalledTimes(1);
+    expect(prisma.analysisOperation.deleteMany).toHaveBeenCalledWith({
+      where: { id: "op-1", leaseExpiresAt: expect.any(Date) },
+    });
+    expect(prisma.analysisOperation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed provider operation retryable when the key is present", async () => {
+    prisma.incident.findUnique.mockResolvedValue(incident());
+    analyze.mockRejectedValue(new AnalysisProviderFailure("timeout"));
+
+    await expect(service.analyze("incident-1", "provider-failed")).rejects.toBeInstanceOf(GatewayTimeoutException);
+    expect(prisma.analysisOperation.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.analysisOperation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ state: "FAILED" }) }),
+    );
+  });
+
+  it("does not remove a provider rate-limit operation", async () => {
+    prisma.incident.findUnique.mockResolvedValue(incident());
+    analyze.mockRejectedValue(new AnalysisProviderFailure("rate_limit"));
+
+    const error = await service.analyze("incident-1", "provider-limited").catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(HttpException);
+    expect(error).toMatchObject({ status: 429 });
+    expect(prisma.analysisOperation.deleteMany).not.toHaveBeenCalled();
     expect(prisma.analysisOperation.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ state: "FAILED" }) }),
     );
@@ -409,11 +439,133 @@ describe("AnalysisService", () => {
     const listed = await service.list("incident-1");
 
     expect(listed.items).toHaveLength(1);
-    expect(prisma.incidentAnalysis.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      }),
-    );
+    expect(prisma.incidentAnalysis.findMany).toHaveBeenCalledWith({
+      where: { incidentId: "incident-1" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
     expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it("does not delete local history", async () => {
+    prisma.incident.findUnique.mockResolvedValue(incident());
+
+    await service.analyze("incident-1", "local-history");
+
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(prisma.incidentAnalysis.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("AnalysisService public demo retention", () => {
+  const prisma = {
+    incident: { findUnique: jest.fn(), update: jest.fn() },
+    incidentAnalysis: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    analysisOperation: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      updateMany: jest.fn(),
+      deleteMany: jest.fn(),
+    },
+    analysisRateState: { update: jest.fn() },
+    $transaction: jest.fn(async (work: (tx: typeof prisma) => Promise<unknown>) => work(prisma)),
+    $queryRaw: jest.fn(),
+    $executeRaw: jest.fn(),
+  };
+  const analyze = jest.fn<AnalysisProvider["analyze"]>();
+  const provider: AnalysisProvider = { isConfigured: () => true, analyze };
+  const publicConfig = {
+    get: (key: string) => {
+      if (key === "PUBLIC_DEMO_MODE") {
+        return "true";
+      }
+      if (key === "ANALYSIS_PROVIDER_MODE") {
+        return "demo";
+      }
+      return undefined;
+    },
+  } as unknown as ConfigService;
+  const metrics: AppMetrics = {
+    recordHttp: jest.fn(),
+    recordEventAccepted: jest.fn(),
+    recordEventDuplicate: jest.fn(),
+    recordEventRejected: jest.fn(),
+    recordAnalysis: jest.fn(),
+    recordAnalysisQuotaRejected: jest.fn(),
+    snapshot: jest.fn(),
+  };
+  const publicService = new AnalysisService(prisma as never, provider, publicConfig, metrics);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.incident.findUnique.mockResolvedValue(incident());
+    prisma.incidentAnalysis.findFirst.mockResolvedValue(null);
+    prisma.incidentAnalysis.findMany.mockResolvedValue([]);
+    prisma.incidentAnalysis.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.analysisOperation.create.mockResolvedValue({ id: "op-1" });
+    prisma.analysisOperation.updateMany.mockResolvedValue({ count: 1 });
+    prisma.analysisOperation.deleteMany.mockResolvedValue({ count: 1 });
+    prisma.$executeRaw.mockResolvedValue(0);
+    prisma.$queryRaw.mockResolvedValue([{ windowStart: new Date(), requestCount: 0 }]);
+    prisma.incidentAnalysis.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "analysis-new",
+      createdAt: new Date("2026-05-02T00:00:00.000Z"),
+      ...data,
+    }));
+    analyze.mockResolvedValue({
+      provider: "demo",
+      model: "demo-rules-v1",
+      output: analysisOutput(),
+      inputTokens: null,
+      outputTokens: null,
+    });
+  });
+
+  it("drops only the analyses beyond the 25 newest for that incident", async () => {
+    prisma.incidentAnalysis.findMany.mockResolvedValue([{ id: "analysis-old" }, { id: "analysis-older" }]);
+
+    await publicService.analyze("incident-1", "public-26");
+
+    const calls = prisma.$executeRaw.mock.invocationCallOrder;
+    const createOrder = prisma.incidentAnalysis.create.mock.invocationCallOrder[0] ?? 0;
+    const retainOrder = prisma.incidentAnalysis.findMany.mock.invocationCallOrder[0] ?? 0;
+    expect(calls[0]).toBeLessThan(createOrder);
+    expect(createOrder).toBeLessThan(retainOrder);
+    expect(prisma.incidentAnalysis.findMany).toHaveBeenCalledWith({
+      where: { incidentId: "incident-1" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: 25,
+      select: { id: true },
+    });
+    expect(prisma.incidentAnalysis.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["analysis-old", "analysis-older"] } },
+    });
+  });
+
+  it("lists at most the retained analyses", async () => {
+    prisma.incident.findUnique.mockResolvedValue({ id: "incident-1" });
+    prisma.incidentAnalysis.findMany.mockResolvedValue([]);
+
+    await publicService.list("incident-1");
+
+    expect(prisma.incidentAnalysis.findMany).toHaveBeenCalledWith({
+      where: { incidentId: "incident-1" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 25,
+    });
+  });
+
+  it("locks each concurrent save before writing", async () => {
+    await Promise.all([
+      publicService.analyze("incident-1", "concurrent-a"),
+      publicService.analyze("incident-1", "concurrent-b"),
+    ]);
+
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+    expect(prisma.incidentAnalysis.create).toHaveBeenCalledTimes(2);
   });
 });

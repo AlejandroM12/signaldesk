@@ -1,6 +1,7 @@
 import { ConfigService } from "@nestjs/config";
 import OpenAI from "openai";
 import { OpenAiAnalysisProvider, requestOpenAiAnalysis } from "./openai-analysis.provider";
+import * as openAiClient from "./openai-client";
 import { readOpenAiSettings } from "./openai-config";
 
 const secret = "sk-test-should-not-leak";
@@ -19,6 +20,29 @@ describe("OpenAiAnalysisProvider", () => {
     await expect(provider.analyze({ instructions: "stay", input: "{}" })).rejects.toMatchObject({
       kind: "not_configured",
     });
+  });
+
+  it("does not construct the OpenAI client when demo mode is selected", async () => {
+    const createClient = jest.spyOn(openAiClient, "createOpenAiClient");
+    const provider = new OpenAiAnalysisProvider({
+      get: (name: string) => {
+        if (name === "OPENAI_API_KEY") {
+          return secret;
+        }
+        if (name === "ANALYSIS_PROVIDER_MODE") {
+          return "demo";
+        }
+        return undefined;
+      },
+    } as unknown as ConfigService);
+
+    expect(createClient).not.toHaveBeenCalled();
+    expect(provider.isConfigured()).toBe(false);
+    await expect(provider.analyze({ instructions: "stay", input: "{}" })).rejects.toMatchObject({
+      kind: "not_configured",
+      message: "not_configured",
+    });
+    createClient.mockRestore();
   });
 });
 

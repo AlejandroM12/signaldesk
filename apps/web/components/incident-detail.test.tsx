@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IncidentDetailView } from "@/components/incident-detail";
 import { ApiError } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
+import { getApiCapabilities } from "@/lib/capabilities";
 import { getIncident } from "@/lib/incidents";
 
 const navigation = vi.hoisted(() => ({
@@ -25,6 +26,10 @@ vi.mock("@/components/incident-analysis", () => ({
 
 vi.mock("@/lib/incidents", () => ({
   getIncident: vi.fn(),
+}));
+
+vi.mock("@/lib/capabilities", () => ({
+  getApiCapabilities: vi.fn(),
 }));
 
 const incident: IncidentDetail = {
@@ -77,6 +82,13 @@ describe("IncidentDetailView", () => {
   beforeEach(() => {
     navigation.id = "inc-1";
     vi.mocked(getIncident).mockReset();
+    vi.mocked(getApiCapabilities).mockReset();
+    vi.mocked(getApiCapabilities).mockResolvedValue({
+      canEditIncidents: true,
+      canIngestEvents: true,
+      canAnalyzeIncidents: true,
+      canViewMetrics: true,
+    });
   });
 
   afterEach(() => {

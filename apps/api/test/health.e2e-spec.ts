@@ -7,8 +7,10 @@ import { AppModule } from "../src/app.module";
 
 describe("Health (e2e)", () => {
   let app: INestApplication<App>;
+  const previousPublicDemoMode = process.env.PUBLIC_DEMO_MODE;
 
   beforeEach(async () => {
+    process.env.PUBLIC_DEMO_MODE = "false";
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -26,6 +28,11 @@ describe("Health (e2e)", () => {
 
   afterEach(async () => {
     await app.close();
+    if (previousPublicDemoMode === undefined) {
+      delete process.env.PUBLIC_DEMO_MODE;
+    } else {
+      process.env.PUBLIC_DEMO_MODE = previousPublicDemoMode;
+    }
   });
 
   it("GET /api/health returns the API status", () => {
@@ -44,6 +51,15 @@ describe("Health (e2e)", () => {
       status: "ok",
       service: API_SERVICE_NAME,
       database: "ok",
+    });
+  });
+
+  it("GET /api/capabilities allows the local API to edit, ingest, analyze, and view metrics", () => {
+    return request(app.getHttpServer()).get("/api/capabilities").expect(200).expect({
+      canEditIncidents: true,
+      canIngestEvents: true,
+      canAnalyzeIncidents: true,
+      canViewMetrics: true,
     });
   });
 });

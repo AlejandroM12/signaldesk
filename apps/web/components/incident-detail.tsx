@@ -1,13 +1,14 @@
 "use client";
 
-import type { IncidentDetail } from "@signaldesk/contracts";
+import type { ApiCapabilities, IncidentDetail } from "@signaldesk/contracts";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { IncidentAnalysisPanel } from "@/components/incident-analysis";
-import { IncidentEditor } from "@/components/incident-editor";
+import { IncidentEditor, type IncidentEditingAccess } from "@/components/incident-editor";
 import { SeverityBadge, StatusBadge } from "@/components/incident-badges";
 import { ApiError } from "@/lib/api";
+import { getApiCapabilities } from "@/lib/capabilities";
 import { formatTimestamp } from "@/lib/format";
 import { getIncident } from "@/lib/incidents";
 import { teamLabels } from "@/lib/labels";
@@ -100,8 +101,58 @@ export function IncidentDetailView() {
   );
 }
 
+type CapabilitiesState = {
+  attempt: number;
+} & (
+  | { status: "loading" }
+  | { status: "ready"; data: ApiCapabilities }
+  | { status: "error"; message: string }
+);
+
 function IncidentWorkspace({ initial }: { initial: IncidentDetail }) {
   const [incident, setIncident] = useState(initial);
+  const [attempt, setAttempt] = useState(0);
+  const [capabilities, setCapabilities] = useState<CapabilitiesState>({ status: "loading", attempt: 0 });
+  const visibleCapabilities: CapabilitiesState =
+    capabilities.attempt === attempt ? capabilities : { status: "loading", attempt };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const requestAttempt = attempt;
+
+    getApiCapabilities(controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setCapabilities({ status: "ready", attempt: requestAttempt, data });
+        }
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+          return;
+        }
+
+        setCapabilities({
+          status: "error",
+          attempt: requestAttempt,
+          message: error instanceof ApiError ? error.message : "No se pudo conectar con la API.",
+        });
+      });
+
+    return () => controller.abort();
+  }, [attempt]);
+
+  const access: IncidentEditingAccess =
+    visibleCapabilities.status === "error"
+      ? {
+          kind: "error",
+          message: visibleCapabilities.message,
+          onRetry: () => setAttempt((current) => current + 1),
+        }
+      : visibleCapabilities.status === "ready"
+        ? visibleCapabilities.data.canEditIncidents
+          ? { kind: "allowed" }
+          : { kind: "denied" }
+        : { kind: "pending" };
 
   return (
     <>
@@ -125,7 +176,7 @@ function IncidentWorkspace({ initial }: { initial: IncidentDetail }) {
         ) : null}
       </dl>
 
-      <IncidentEditor incident={incident} onUpdated={setIncident} />
+      <IncidentEditor incident={incident} onUpdated={setIncident} access={access} />
 
       <section>
         <h2 className="text-lg font-semibold">
@@ -153,7 +204,10 @@ function IncidentWorkspace({ initial }: { initial: IncidentDetail }) {
         )}
       </section>
 
-      <IncidentAnalysisPanel incident={incident} />
+      <IncidentAnalysisPanel
+        incident={incident}
+        canAnalyze={visibleCapabilities.status === "ready" && visibleCapabilities.data.canAnalyzeIncidents}
+      />
     </>
   );
 }

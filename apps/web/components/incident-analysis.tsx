@@ -27,7 +27,13 @@ const hypothesisLabels: Record<AnalysisHypothesisType, string> = {
   ALTERNATIVE_EXPLANATION: "Explicación alternativa",
 };
 
-export function IncidentAnalysisPanel({ incident }: { incident: IncidentDetail }) {
+export function IncidentAnalysisPanel({
+  incident,
+  canAnalyze,
+}: {
+  incident: IncidentDetail;
+  canAnalyze: boolean;
+}) {
   const [attempt, setAttempt] = useState(0);
   const [listState, setListState] = useState<ListState>({
     status: "loading",
@@ -82,7 +88,7 @@ export function IncidentAnalysisPanel({ incident }: { incident: IncidentDetail }
   const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
 
   async function analyze(mode: "new" | "retry"): Promise<void> {
-    if (savingRef.current) {
+    if (!canAnalyze || savingRef.current) {
       return;
     }
     const pending = pendingKeyRef.current;
@@ -129,16 +135,18 @@ export function IncidentAnalysisPanel({ incident }: { incident: IncidentDetail }
         La confianza es cualitativa: no es una probabilidad calibrada. Cada análisis guardado identifica su
         proveedor.
       </p>
-      <button
-        type="button"
-        className="mt-4 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-400"
-        onClick={() => void analyze("new")}
-        disabled={saving}
-      >
-        {saving ? "Analizando incidente…" : "Analizar incidente"}
-      </button>
+      {canAnalyze ? (
+        <button
+          type="button"
+          className="mt-4 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-400"
+          onClick={() => void analyze("new")}
+          disabled={saving}
+        >
+          {saving ? "Analizando incidente…" : "Analizar incidente"}
+        </button>
+      ) : null}
 
-      {analyzeError ? (
+      {canAnalyze && analyzeError ? (
         <div className="mt-4 rounded-lg border border-zinc-300 bg-white p-4" role="alert">
           <p className="text-sm text-zinc-800">{analyzeError.message}</p>
           <button

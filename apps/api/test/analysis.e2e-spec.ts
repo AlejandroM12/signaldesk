@@ -59,6 +59,7 @@ class FakeAnalysisProvider implements AnalysisProvider {
 }
 
 process.env.ANALYSIS_RATE_LIMIT = "100";
+const previousPublicDemoMode = process.env.PUBLIC_DEMO_MODE;
 
 describe("Incident analysis (e2e)", () => {
   let app: INestApplication<App>;
@@ -76,6 +77,7 @@ describe("Incident analysis (e2e)", () => {
 
   beforeAll(async () => {
     process.env.ANALYSIS_RATE_LIMIT = "100";
+    process.env.PUBLIC_DEMO_MODE = "false";
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -205,6 +207,11 @@ describe("Incident analysis (e2e)", () => {
       await prisma.incident.deleteMany({ where: { id: { in: createdIncidentIds } } });
     }
     await app.close();
+    if (previousPublicDemoMode === undefined) {
+      delete process.env.PUBLIC_DEMO_MODE;
+    } else {
+      process.env.PUBLIC_DEMO_MODE = previousPublicDemoMode;
+    }
   });
 
   it("returns 404 for an unknown incident and keeps health available", async () => {
@@ -402,6 +409,7 @@ describe("Incident analysis (e2e)", () => {
   });
 
   it("rejects analysis requests over the local limit without calling the provider", async () => {
+    const key = `limited-${randomUUID()}`;
     await prisma.analysisRateState.update({
       where: { id: 1 },
       data: { windowStart: new Date(), requestCount: 100 },
@@ -409,10 +417,15 @@ describe("Incident analysis (e2e)", () => {
     try {
       const limited = await request(app.getHttpServer())
         .post(`/api/incidents/${mainId}/analyze`)
-        .send({ idempotencyKey: `limited-${randomUUID()}` })
+        .send({ idempotencyKey: key })
         .expect(429);
       expect(limited.body.message).toBe("Se alcanzó el límite de análisis de esta API. Probá más tarde.");
       expect(provider.calls).toHaveLength(0);
+      await expect(
+        prisma.analysisOperation.findUnique({
+          where: { incidentId_idempotencyKey: { incidentId: mainId, idempotencyKey: key } },
+        }),
+      ).resolves.toBeNull();
 
       await request(app.getHttpServer()).get(`/api/incidents/${mainId}/analyses`).expect(200);
       await request(app.getHttpServer()).get(`/api/incidents/${mainId}`).expect(200);
@@ -423,6 +436,17 @@ describe("Incident analysis (e2e)", () => {
         data: { windowStart: new Date(), requestCount: 0 },
       });
     }
+
+    const saved = await request(app.getHttpServer())
+      .post(`/api/incidents/${mainId}/analyze`)
+      .send({ idempotencyKey: key })
+      .expect(201);
+    expect(saved.body.id).toEqual(expect.any(String));
+    await expect(
+      prisma.analysisOperation.findUnique({
+        where: { incidentId_idempotencyKey: { incidentId: mainId, idempotencyKey: key } },
+      }),
+    ).resolves.toBeNull();
   });
 
   it("does not store a result when the provider fails or the output is invalid", async () => {
@@ -480,4 +504,52 @@ describe("Incident analysis (e2e)", () => {
       .get(`/api/incidents/${foreignId}/analyses/${limited.body.id}`)
       .expect(404);
   });
+
+  it("keeps every local analysis when an incident stores more than 25", async () => {
+    await prisma.analysisRateState.update({
+      where: { id: 1 },
+      data: { windowStart: new Date(), requestCount: 0 },
+    });
+    const created = await prisma.incident.create({
+      data: {
+        title: "historial local",
+        status: "OPEN",
+        severity: "HIGH",
+        service,
+        team: "BACKEND",
+        events: {
+          create: [
+            {
+              source: "e2e",
+              externalId: `e2e-local-history-${randomUUID()}`,
+              service,
+              errorType: "timeouterror",
+              message: "El checkout agotó el tiempo.",
+              timestamp: new Date("2026-04-01T12:00:00.000Z"),
+            },
+          ],
+        },
+      },
+      include: { events: true },
+    });
+    createdIncidentIds.push(created.id);
+    const historyEventId = created.events[0]?.id ?? "";
+    provider.output = grounded(historyEventId);
+    try {
+      for (let index = 0; index < 26; index += 1) {
+        await request(app.getHttpServer())
+          .post(`/api/incidents/${created.id}/analyze`)
+          .send({ idempotencyKey: `local-history-${index}-${randomUUID()}` })
+          .expect(201);
+      }
+      await expect(prisma.incidentAnalysis.count({ where: { incidentId: created.id } })).resolves.toBe(26);
+      const history = await request(app.getHttpServer()).get(`/api/incidents/${created.id}/analyses`).expect(200);
+      expect(history.body.items).toHaveLength(26);
+    } finally {
+      await prisma.analysisRateState.update({
+        where: { id: 1 },
+        data: { windowStart: new Date(), requestCount: 0 },
+      });
+    }
+  }, 30_000);
 });

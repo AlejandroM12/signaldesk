@@ -20,3 +20,7 @@ export function readAnalysisProviderMode(env: ProviderModeEnv): AnalysisProvider
 export function createAnalysisProvider<T>(env: ProviderModeEnv, providers: { openai: T; demo: T }): T {
   return readAnalysisProviderMode(env) === "demo" ? providers.demo : providers.openai;
 }
+
+export function allowsOpenAiClient(mode: string | undefined): boolean {
+  return (mode?.trim() ?? "") !== "demo";
+}

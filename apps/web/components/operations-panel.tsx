@@ -3,22 +3,38 @@
 import type { MetricsResponse } from "@signaldesk/contracts";
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { getApiCapabilities } from "@/lib/capabilities";
 import { getMetrics } from "@/lib/metrics";
 
-type PanelState =
+type CapabilitiesState =
+  | { status: "loading"; attempt: number }
+  | { status: "allowed"; attempt: number }
+  | { status: "blocked"; attempt: number }
+  | { status: "error"; attempt: number; message: string }
+  | { status: "unconfigured" };
+
+type MetricsState =
   | { status: "loading"; attempt: number }
   | { status: "ready"; attempt: number; data: MetricsResponse }
   | { status: "error"; attempt: number; message: string };
 
+const PUBLIC_METRICS_MESSAGE = "Las métricas internas no están disponibles en la demo pública";
+
 export function OperationsPanel() {
   const configured = Boolean(process.env.NEXT_PUBLIC_API_URL);
-  const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<PanelState>(
-    configured
-      ? { status: "loading", attempt: 0 }
-      : { status: "error", attempt: 0, message: "Falta la variable NEXT_PUBLIC_API_URL." },
+  const [capabilityAttempt, setCapabilityAttempt] = useState(0);
+  const [capabilities, setCapabilities] = useState<CapabilitiesState>(
+    configured ? { status: "loading", attempt: 0 } : { status: "unconfigured" },
   );
-  const visible: PanelState = state.attempt === attempt ? state : { status: "loading", attempt };
+  const [metricsAttempt, setMetricsAttempt] = useState(0);
+  const [metrics, setMetrics] = useState<MetricsState>({ status: "loading", attempt: 0 });
+  const visibleCapabilities: CapabilitiesState =
+    capabilities.status === "unconfigured" || capabilities.attempt === capabilityAttempt
+      ? capabilities
+      : { status: "loading", attempt: capabilityAttempt };
+  const metricsAllowed = visibleCapabilities.status === "allowed";
+  const visibleMetrics: MetricsState =
+    metrics.attempt === metricsAttempt ? metrics : { status: "loading", attempt: metricsAttempt };
 
   useEffect(() => {
     if (!configured) {
@@ -26,18 +42,21 @@ export function OperationsPanel() {
     }
 
     const controller = new AbortController();
-    const requestAttempt = attempt;
-    getMetrics(controller.signal)
+    const requestAttempt = capabilityAttempt;
+    getApiCapabilities(controller.signal)
       .then((data) => {
         if (!controller.signal.aborted) {
-          setState({ status: "ready", attempt: requestAttempt, data });
+          setCapabilities({
+            status: data.canViewMetrics ? "allowed" : "blocked",
+            attempt: requestAttempt,
+          });
         }
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
           return;
         }
-        setState({
+        setCapabilities({
           status: "error",
           attempt: requestAttempt,
           message: error instanceof ApiError ? error.message : "No se pudo conectar con la API.",
@@ -45,9 +64,36 @@ export function OperationsPanel() {
       });
 
     return () => controller.abort();
-  }, [attempt, configured]);
+  }, [capabilityAttempt, configured]);
 
-  const data = visible.status === "ready" ? visible.data : null;
+  useEffect(() => {
+    if (!metricsAllowed) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const requestAttempt = metricsAttempt;
+    getMetrics(controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setMetrics({ status: "ready", attempt: requestAttempt, data });
+        }
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+          return;
+        }
+        setMetrics({
+          status: "error",
+          attempt: requestAttempt,
+          message: error instanceof ApiError ? error.message : "No se pudo conectar con la API.",
+        });
+      });
+
+    return () => controller.abort();
+  }, [metricsAllowed, metricsAttempt]);
+
+  const data = metricsAllowed && visibleMetrics.status === "ready" ? visibleMetrics.data : null;
   const empty =
     data !== null &&
     data.http.requests === 0 &&
@@ -57,6 +103,8 @@ export function OperationsPanel() {
     data.incidents.created === 0 &&
     data.analysis.succeeded === 0 &&
     data.analysis.failed === 0;
+  const metricsError = metricsAllowed && visibleMetrics.status === "error" ? visibleMetrics.message : null;
+  const loading = visibleCapabilities.status === "loading" || (metricsAllowed && visibleMetrics.status === "loading");
 
   return (
     <section id="operacion" aria-labelledby="operacion-title" className="scroll-mt-24">
@@ -70,28 +118,59 @@ export function OperationsPanel() {
             reiniciar la API y no se comparten entre instancias.
           </p>
         </div>
-        <button
-          type="button"
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-          onClick={() => setAttempt((current) => current + 1)}
-        >
-          Actualizar
-        </button>
+        {metricsAllowed || visibleCapabilities.status === "unconfigured" ? (
+          <button
+            type="button"
+            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+            onClick={() => setMetricsAttempt((current) => current + 1)}
+          >
+            Actualizar
+          </button>
+        ) : null}
       </div>
 
-      <div className="mt-4" aria-live="polite" aria-busy={visible.status === "loading"}>
-        {visible.status === "loading" ? (
+      <div className="mt-4" aria-live="polite" aria-busy={loading}>
+        {loading ? (
           <p className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-600">
             Cargando métricas…
           </p>
         ) : null}
-        {visible.status === "error" ? (
+        {visibleCapabilities.status === "blocked" ? (
+          <p className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
+            {PUBLIC_METRICS_MESSAGE}
+          </p>
+        ) : null}
+        {visibleCapabilities.status === "unconfigured" ? (
           <div className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
-            <p>{visible.message}</p>
+            <p>Falta la variable NEXT_PUBLIC_API_URL.</p>
             <button
               type="button"
               className="mt-3 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
-              onClick={() => setAttempt((current) => current + 1)}
+              onClick={() => setMetricsAttempt((current) => current + 1)}
+            >
+              Reintentar
+            </button>
+          </div>
+        ) : null}
+        {visibleCapabilities.status === "error" ? (
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
+            <p>{visibleCapabilities.message}</p>
+            <button
+              type="button"
+              className="mt-3 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+              onClick={() => setCapabilityAttempt((current) => current + 1)}
+            >
+              Reintentar
+            </button>
+          </div>
+        ) : null}
+        {metricsError ? (
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
+            <p>{metricsError}</p>
+            <button
+              type="button"
+              className="mt-3 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+              onClick={() => setMetricsAttempt((current) => current + 1)}
             >
               Reintentar
             </button>

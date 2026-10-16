@@ -1,3 +1,5 @@
+export const PUBLIC_DEMO_ANALYSIS_RETENTION = 25;
+
 export const ANALYSIS_LIMITS = {
   maxEvents: 12,
   maxMessageChars: 400,

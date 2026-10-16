@@ -19,10 +19,12 @@ import { Prisma } from "../generated/prisma/client";
 import { APP_METRICS, noopAppMetrics, type AnalysisMetric, type AppMetrics } from "../observability/app-metrics";
 import { currentRequestId, durationMs } from "../observability/request-context";
 import { PrismaService } from "../prisma/prisma.service";
+import { readPublicDemoConfig } from "../public-demo/public-demo";
 import { nextRateWindow, readAnalysisBudget, type AnalysisBudget } from "./analysis-budget";
 import { buildAnalysisContext } from "./analysis-context";
 import { AnalysisProviderFailure } from "./analysis-errors";
 import { ANALYSIS_INSTRUCTIONS, ANALYSIS_PROMPT_VERSION } from "./analysis-instructions";
+import { PUBLIC_DEMO_ANALYSIS_RETENTION } from "./analysis-limits";
 import { ANALYSIS_PROVIDER, type AnalysisProvider } from "./analysis-provider";
 import { mapStoredAnalysis, validateAnalysisOutput } from "./analysis-result";
 
@@ -52,6 +54,7 @@ export class AnalysisService {
   private readonly logger = new Logger(AnalysisService.name);
   private readonly budget: AnalysisBudget;
   private readonly metrics: AppMetrics;
+  private readonly publicDemo: boolean;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -65,6 +68,10 @@ export class AnalysisService {
       ANALYSIS_RATE_WINDOW_MS: config.get<string>("ANALYSIS_RATE_WINDOW_MS"),
       OPENAI_TIMEOUT_MS: config.get<string>("OPENAI_TIMEOUT_MS"),
     });
+    this.publicDemo = readPublicDemoConfig({
+      PUBLIC_DEMO_MODE: config.get<string>("PUBLIC_DEMO_MODE"),
+      ANALYSIS_PROVIDER_MODE: config.get<string>("ANALYSIS_PROVIDER_MODE"),
+    }).enabled;
   }
 
   async list(incidentId: string): Promise<IncidentAnalysisListResponse> {
@@ -72,6 +79,7 @@ export class AnalysisService {
     const rows = await this.prisma.incidentAnalysis.findMany({
       where: { incidentId },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      ...(this.publicDemo ? { take: PUBLIC_DEMO_ANALYSIS_RETENTION } : {}),
     });
     const items: IncidentAnalysis[] = [];
     for (const row of rows) {
@@ -149,6 +157,10 @@ export class AnalysisService {
       } catch (error) {
         if (isLocalQuota(error)) {
           this.recordMetric(() => this.metrics.recordAnalysisQuotaRejected());
+          if (claim) {
+            await this.releaseClaim(claim);
+            claim = null;
+          }
         }
         throw error;
       }
@@ -232,6 +244,9 @@ export class AnalysisService {
     data: Prisma.IncidentAnalysisUncheckedCreateInput,
   ) {
     return this.prisma.$transaction(async (tx) => {
+      if (this.publicDemo) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${data.incidentId}))`;
+      }
       if (claim) {
         const owned = await tx.analysisOperation.updateMany({
           where: {
@@ -246,12 +261,33 @@ export class AnalysisService {
         }
       }
       const saved = await tx.incidentAnalysis.create({ data });
+      if (this.publicDemo) {
+        await this.retainRecentAnalyses(tx, data.incidentId);
+      }
       if (claim) {
         await tx.analysisOperation.deleteMany({
           where: { id: claim.operationId, leaseExpiresAt: claim.leaseExpiresAt },
         });
       }
       return saved;
+    });
+  }
+
+  private async retainRecentAnalyses(
+    tx: Prisma.TransactionClient,
+    incidentId: string,
+  ): Promise<void> {
+    const stale = await tx.incidentAnalysis.findMany({
+      where: { incidentId },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: PUBLIC_DEMO_ANALYSIS_RETENTION,
+      select: { id: true },
+    });
+    if (stale.length === 0) {
+      return;
+    }
+    await tx.incidentAnalysis.deleteMany({
+      where: { id: { in: stale.map((row) => row.id) } },
     });
   }
 

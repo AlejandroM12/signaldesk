@@ -29,12 +29,20 @@ type ActivityState =
 const fieldClassName =
   "mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950";
 
+export type IncidentEditingAccess =
+  | { kind: "pending" }
+  | { kind: "error"; message: string; onRetry: () => void }
+  | { kind: "allowed" }
+  | { kind: "denied" };
+
 export function IncidentEditor({
   incident,
   onUpdated,
+  access,
 }: {
   incident: IncidentDetail;
   onUpdated: (incident: IncidentDetail) => void;
+  access: IncidentEditingAccess;
 }) {
   const [form, setForm] = useState<FormState>(() => formFromIncident(incident));
   const [baseline, setBaseline] = useState(incident.updatedAt);
@@ -59,6 +67,7 @@ export function IncidentEditor({
     setError(null);
   }
 
+  const hasChanges = formHasChanges(form, incident);
   const activityKey = `${incident.id}:${incident.updatedAt}:${activityAttempt}`;
   if (
     trackedActivity.id !== incident.id ||
@@ -93,7 +102,7 @@ export function IncidentEditor({
   }, [activityAttempt, activityKey, incident.id, incident.updatedAt]);
 
   async function submit(status?: EditableIncidentStatus) {
-    if (savingRef.current) {
+    if (access.kind !== "allowed" || savingRef.current || (!status && !formHasChanges(form, incident))) {
       return;
     }
 
@@ -149,10 +158,32 @@ export function IncidentEditor({
     setConfirmResolve(true);
   }
 
+  const editable = access.kind === "allowed";
+
   return (
     <div className="flex flex-col gap-6">
       <section className="rounded-xl border border-zinc-200 bg-white p-5">
         <h2 className="text-lg font-semibold">Edición</h2>
+        {access.kind === "pending" ? (
+          <p className="mt-3 text-sm text-zinc-600">Cargando permisos de edición…</p>
+        ) : null}
+        {access.kind === "denied" ? (
+          <p className="mt-3 text-sm text-zinc-600">La edición está deshabilitada en la demo pública.</p>
+        ) : null}
+        {access.kind === "error" ? (
+          <div className="mt-3 text-sm" role="alert">
+            <p>No se pudo confirmar si la edición está habilitada.</p>
+            <p className="mt-1 text-zinc-600">{access.message}</p>
+            <button
+              type="button"
+              className="mt-3 rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
+              onClick={access.onRetry}
+            >
+              Reintentar
+            </button>
+          </div>
+        ) : null}
+        {editable ? (
         <form
           className="mt-4 grid gap-4"
           onSubmit={(event) => {
@@ -219,7 +250,7 @@ export function IncidentEditor({
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || !hasChanges}
               className="rounded-lg bg-zinc-950 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-950"
             >
               {saving ? "Guardando…" : "Guardar"}
@@ -266,7 +297,10 @@ export function IncidentEditor({
             ) : null}
           </div>
         </form>
-        {confirmResolve ? (
+        ) : (
+          <ReadOnlyIncidentFields incident={incident} />
+        )}
+        {editable && confirmResolve ? (
           <div className="mt-4 rounded-lg border border-zinc-300 bg-zinc-50 p-4" aria-live="polite">
             <h3 className="font-medium">Resolver incidente</h3>
             <p className="mt-1 text-sm text-zinc-600">
@@ -385,6 +419,30 @@ function displayChange(label: string, value: string | null): string {
   return value;
 }
 
+function ReadOnlyIncidentFields({ incident }: { incident: IncidentDetail }) {
+  return (
+    <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+      <ReadOnlyField label="Causa raíz" value={pendingText(incident.rootCause)} wide />
+      <ReadOnlyField label="Solución" value={pendingText(incident.resolution)} wide />
+      <ReadOnlyField label="Equipo" value={teamLabels[incident.team]} />
+      <ReadOnlyField label="Responsable" value={incident.assignee?.trim() ? incident.assignee : "Sin responsable"} />
+    </dl>
+  );
+}
+
+function ReadOnlyField({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <div className={wide ? "sm:col-span-2" : undefined}>
+      <dt className="text-sm font-medium text-zinc-700">{label}</dt>
+      <dd className="mt-1 text-sm">{value}</dd>
+    </div>
+  );
+}
+
+function pendingText(value: string | null): string {
+  return value && value.trim().length > 0 ? value : "Pendiente";
+}
+
 function formFromIncident(incident: IncidentDetail): FormState {
   return {
     rootCause: incident.rootCause ?? "",
@@ -397,4 +455,13 @@ function formFromIncident(incident: IncidentDetail): FormState {
 function emptyToNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function formHasChanges(form: FormState, incident: IncidentDetail): boolean {
+  return (
+    emptyToNull(form.rootCause) !== emptyToNull(incident.rootCause ?? "") ||
+    emptyToNull(form.resolution) !== emptyToNull(incident.resolution ?? "") ||
+    form.team !== incident.team ||
+    emptyToNull(form.assignee) !== emptyToNull(incident.assignee ?? "")
+  );
 }

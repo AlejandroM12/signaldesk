@@ -33,6 +33,8 @@ export {
   type IncidentTeam,
 } from "./incidents.js";
 
+export { CAPABILITIES_PATH, type ApiCapabilities } from "./capabilities.js";
+
 export {
   HEALTH_READY_PATH,
   METRICS_PATH,
