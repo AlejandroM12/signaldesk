@@ -66,7 +66,7 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function readErrorMessage(response: Response): Promise<string> {
+export async function readErrorMessage(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { message?: unknown };
     if (Array.isArray(body.message)) {

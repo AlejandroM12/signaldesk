@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from "@nestjs/common";
 import type { IncidentAnalysis, IncidentAnalysisListResponse } from "@signaldesk/contracts";
+import { AnalysisProxyGuard } from "./analysis-proxy.guard";
 import { AnalysisService } from "./analysis.service";
 import { AnalyzeIncidentDto } from "./dto/analyze-incident.dto";
 
@@ -8,6 +9,7 @@ export class AnalysisController {
   constructor(private readonly analyses: AnalysisService) {}
 
   @Post(":id/analyze")
+  @UseGuards(AnalysisProxyGuard)
   analyze(
     @Param("id", new ParseUUIDPipe()) id: string,
     @Body() body: AnalyzeIncidentDto,

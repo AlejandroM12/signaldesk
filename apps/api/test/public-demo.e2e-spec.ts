@@ -5,13 +5,17 @@ import request from "supertest";
 import { App } from "supertest/types";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { ANALYSIS_PROXY_FORBIDDEN, ANALYSIS_PROXY_SECRET_HEADER } from "../src/analysis/analysis-proxy-secret";
 import { PUBLIC_DEMO_FORBIDDEN } from "../src/public-demo/public-demo";
+
+const PROXY_SECRET = "e2e-public-demo-proxy-secret";
 
 const previous = {
   PUBLIC_DEMO_MODE: process.env.PUBLIC_DEMO_MODE,
   ANALYSIS_PROVIDER_MODE: process.env.ANALYSIS_PROVIDER_MODE,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   ANALYSIS_RATE_LIMIT: process.env.ANALYSIS_RATE_LIMIT,
+  ANALYSIS_PROXY_SECRET: process.env.ANALYSIS_PROXY_SECRET,
 };
 
 describe("Public demo mode (e2e)", () => {
@@ -26,6 +30,7 @@ describe("Public demo mode (e2e)", () => {
     process.env.ANALYSIS_PROVIDER_MODE = "demo";
     process.env.OPENAI_API_KEY = "sk-public-demo-must-not-be-used";
     process.env.ANALYSIS_RATE_LIMIT = "1000";
+    process.env.ANALYSIS_PROXY_SECRET = PROXY_SECRET;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -77,6 +82,7 @@ describe("Public demo mode (e2e)", () => {
     restore("ANALYSIS_PROVIDER_MODE", previous.ANALYSIS_PROVIDER_MODE);
     restore("OPENAI_API_KEY", previous.OPENAI_API_KEY);
     restore("ANALYSIS_RATE_LIMIT", previous.ANALYSIS_RATE_LIMIT);
+    restore("ANALYSIS_PROXY_SECRET", previous.ANALYSIS_PROXY_SECRET);
   });
 
   it("serves health, incidents, activity, and demo analysis", async () => {
@@ -97,14 +103,24 @@ describe("Public demo mode (e2e)", () => {
 
     await request(app.getHttpServer()).get(`/api/incidents/${incidentId}/activity`).expect(200);
 
+    const idempotencyKey = `public-demo-${randomUUID()}`;
     const created = await request(app.getHttpServer())
       .post(`/api/incidents/${incidentId}/analyze`)
-      .send({ idempotencyKey: `public-demo-${randomUUID()}` })
+      .set(ANALYSIS_PROXY_SECRET_HEADER, PROXY_SECRET)
+      .send({ idempotencyKey })
       .expect(201);
     expect(created.body.provider).toBe("demo");
     expect(created.body.model).toBe("demo-rules-v1");
     expect(created.body.hypotheses[0].supportingEvidence[0].eventId).toBe(eventId);
     expect(JSON.stringify(created.body)).not.toContain("sk-public-demo-must-not-be-used");
+    expect(JSON.stringify(created.body)).not.toContain(PROXY_SECRET);
+
+    const replay = await request(app.getHttpServer())
+      .post(`/api/incidents/${incidentId}/analyze`)
+      .set(ANALYSIS_PROXY_SECRET_HEADER, PROXY_SECRET)
+      .send({ idempotencyKey })
+      .expect(201);
+    expect(replay.body.id).toBe(created.body.id);
 
     const history = await request(app.getHttpServer()).get(`/api/incidents/${incidentId}/analyses`).expect(200);
     expect(history.body.items).toEqual([expect.objectContaining({ id: created.body.id, provider: "demo" })]);
@@ -112,6 +128,34 @@ describe("Public demo mode (e2e)", () => {
     await request(app.getHttpServer())
       .get(`/api/incidents/${incidentId}/analyses/${created.body.id}`)
       .expect(200);
+  });
+
+  it("rejects a missing or wrong proxy secret before consuming quota", async () => {
+    const key = `denied-${randomUUID()}`;
+    const analysesBefore = await prisma.incidentAnalysis.count({ where: { incidentId } });
+    const operationsBefore = await prisma.analysisOperation.count({ where: { incidentId } });
+    const rateBefore = await prisma.analysisRateState.findUnique({ where: { id: 1 } });
+
+    const missing = await request(app.getHttpServer())
+      .post(`/api/incidents/${incidentId}/analyze`)
+      .send({ idempotencyKey: key })
+      .expect(403);
+    expect(missing.body.message).toBe(ANALYSIS_PROXY_FORBIDDEN);
+    expect(JSON.stringify(missing.body)).not.toContain(PROXY_SECRET);
+
+    const wrong = await request(app.getHttpServer())
+      .post(`/api/incidents/${incidentId}/analyze`)
+      .set(ANALYSIS_PROXY_SECRET_HEADER, "wrong-public-demo-secret")
+      .send({ idempotencyKey: key })
+      .expect(403);
+    expect(wrong.body.message).toBe(ANALYSIS_PROXY_FORBIDDEN);
+
+    expect(await prisma.incidentAnalysis.count({ where: { incidentId } })).toBe(analysesBefore);
+    expect(await prisma.analysisOperation.count({ where: { incidentId } })).toBe(operationsBefore);
+    await expect(prisma.incidentAnalysis.findFirst({ where: { incidentId, idempotencyKey: key } })).resolves.toBeNull();
+    await expect(prisma.analysisOperation.findFirst({ where: { incidentId, idempotencyKey: key } })).resolves.toBeNull();
+    const rateAfter = await prisma.analysisRateState.findUnique({ where: { id: 1 } });
+    expect(rateAfter?.requestCount ?? 0).toBe(rateBefore?.requestCount ?? 0);
   });
 
   it("blocks ingest, edits, and metrics without changing the incident", async () => {
@@ -244,13 +288,19 @@ async function analyzeIncident(
 ): Promise<{ id: string }> {
   const response = await request(app.getHttpServer())
     .post(`/api/incidents/${incidentId}/analyze`)
+    .set(ANALYSIS_PROXY_SECRET_HEADER, PROXY_SECRET)
     .send({ idempotencyKey })
     .expect(201);
   return response.body as { id: string };
 }
 
 function restore(
-  name: "PUBLIC_DEMO_MODE" | "ANALYSIS_PROVIDER_MODE" | "OPENAI_API_KEY" | "ANALYSIS_RATE_LIMIT",
+  name:
+    | "PUBLIC_DEMO_MODE"
+    | "ANALYSIS_PROVIDER_MODE"
+    | "OPENAI_API_KEY"
+    | "ANALYSIS_RATE_LIMIT"
+    | "ANALYSIS_PROXY_SECRET",
   value: string | undefined,
 ): void {
   if (value === undefined) {

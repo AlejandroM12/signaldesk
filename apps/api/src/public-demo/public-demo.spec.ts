@@ -137,11 +137,13 @@ describe("public demo startup", () => {
   const previous = {
     PUBLIC_DEMO_MODE: process.env.PUBLIC_DEMO_MODE,
     ANALYSIS_PROVIDER_MODE: process.env.ANALYSIS_PROVIDER_MODE,
+    ANALYSIS_PROXY_SECRET: process.env.ANALYSIS_PROXY_SECRET,
   };
 
   afterEach(() => {
     restore("PUBLIC_DEMO_MODE", previous.PUBLIC_DEMO_MODE);
     restore("ANALYSIS_PROVIDER_MODE", previous.ANALYSIS_PROVIDER_MODE);
+    restore("ANALYSIS_PROXY_SECRET", previous.ANALYSIS_PROXY_SECRET);
   });
 
   it("refuses to boot a public demo configured with openai", async () => {
@@ -152,9 +154,22 @@ describe("public demo startup", () => {
       "PUBLIC_DEMO_MODE=true exige ANALYSIS_PROVIDER_MODE=demo",
     );
   });
+
+  it("refuses to boot a public demo without the proxy secret", async () => {
+    process.env.PUBLIC_DEMO_MODE = "true";
+    process.env.ANALYSIS_PROVIDER_MODE = "demo";
+    process.env.ANALYSIS_PROXY_SECRET = "";
+
+    await expect(Test.createTestingModule({ imports: [AppModule] }).compile()).rejects.toThrow(
+      "ANALYSIS_PROXY_SECRET es obligatorio en la demo pública.",
+    );
+  });
 });
 
-function restore(name: "PUBLIC_DEMO_MODE" | "ANALYSIS_PROVIDER_MODE", value: string | undefined): void {
+function restore(
+  name: "PUBLIC_DEMO_MODE" | "ANALYSIS_PROVIDER_MODE" | "ANALYSIS_PROXY_SECRET",
+  value: string | undefined,
+): void {
   if (value === undefined) {
     delete process.env[name];
   } else {

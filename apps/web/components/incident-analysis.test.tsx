@@ -70,9 +70,11 @@ describe("analysisRetryReusesKey", () => {
     expect(analysisRetryReusesKey(0)).toBe(true);
     expect(analysisRetryReusesKey(409)).toBe(true);
     expect(analysisRetryReusesKey(500)).toBe(true);
+    expect(analysisRetryReusesKey(502)).toBe(true);
+    expect(analysisRetryReusesKey(504)).toBe(true);
     expect(analysisRetryReusesKey(429)).toBe(false);
+    expect(analysisRetryReusesKey(403)).toBe(false);
     expect(analysisRetryReusesKey(503)).toBe(false);
-    expect(analysisRetryReusesKey(504)).toBe(false);
   });
 });
 
@@ -200,7 +202,7 @@ describe("IncidentAnalysisPanel", () => {
     ]);
   });
 
-  it("starts a new operation after a definitive provider timeout", async () => {
+  it("reuses the key after a provider or proxy timeout", async () => {
     const user = userEvent.setup();
     vi.mocked(analyzeIncident)
       .mockRejectedValueOnce(
@@ -215,7 +217,7 @@ describe("IncidentAnalysisPanel", () => {
 
     expect(vi.mocked(analyzeIncident).mock.calls.map((call) => call[1])).toEqual([
       "00000000-0000-4000-8000-000000000001",
-      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000001",
     ]);
   });
 

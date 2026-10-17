@@ -3,6 +3,7 @@ import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
+import { readListenTarget } from "./listen-address";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -21,7 +22,11 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  await app.listen(config.getOrThrow<string>("API_PORT"));
+  const listenTarget = readListenTarget({
+    PORT: process.env.PORT,
+    API_PORT: process.env.API_PORT,
+  });
+  await app.listen(listenTarget.port, listenTarget.host);
 }
 
 void bootstrap();

@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { PrismaModule } from "../prisma/prisma.module";
 import { createAnalysisProvider } from "./analysis-provider-mode";
 import { ANALYSIS_PROVIDER } from "./analysis-provider";
+import { AnalysisProxyGuard } from "./analysis-proxy.guard";
 import { AnalysisController } from "./analysis.controller";
 import { AnalysisService } from "./analysis.service";
 import { DemoAnalysisProvider } from "./demo-analysis.provider";
@@ -15,6 +16,7 @@ const logger = new Logger("AnalysisModule");
   controllers: [AnalysisController],
   providers: [
     AnalysisService,
+    AnalysisProxyGuard,
     OpenAiAnalysisProvider,
     DemoAnalysisProvider,
     {
