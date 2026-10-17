@@ -1,0 +1,4 @@
+{
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile --filter @signaldesk/web...",
+  "buildCommand": "pnpm build"
+}
