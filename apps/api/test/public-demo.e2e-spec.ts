@@ -189,6 +189,49 @@ describe("Public demo mode (e2e)", () => {
     await expect(prisma.event.count({ where: { incidentId } })).resolves.toBe(eventsBefore);
   });
 
+  it("blocks Express-equivalent path variants with 403 before handlers run", async () => {
+    const before = await prisma.incident.findUnique({ where: { id: incidentId } });
+    const eventsBefore = await prisma.event.count({ where: { incidentId } });
+    const payload = {
+      source: "e2e",
+      service,
+      errorType: "timeouterror",
+      message: "no debe guardarse",
+      timestamp: "2026-04-01T12:05:00.000Z",
+    };
+
+    for (const path of ["/api/events/", "/API/events", "/api/Events"]) {
+      const response = await request(app.getHttpServer()).post(path).send(payload).expect(403);
+      expect(response.body.message).toBe(PUBLIC_DEMO_FORBIDDEN);
+    }
+
+    for (const path of [
+      `/api/incidents/${incidentId}/`,
+      `/API/incidents/${incidentId}`,
+      `/api/Incidents/${incidentId}`,
+    ]) {
+      const response = await request(app.getHttpServer())
+        .patch(path)
+        .send({ expectedUpdatedAt: before?.updatedAt.toISOString(), rootCause: "no debe guardarse" })
+        .expect(403);
+      expect(response.body.message).toBe(PUBLIC_DEMO_FORBIDDEN);
+    }
+
+    for (const path of ["/api/metrics/", "/API/metrics", "/api/metrics?since=1"]) {
+      const response = await request(app.getHttpServer()).get(path).expect(403);
+      expect(response.body.message).toBe(PUBLIC_DEMO_FORBIDDEN);
+    }
+
+    await request(app.getHttpServer()).get("/api/health/").expect(200);
+    await request(app.getHttpServer()).get("/API/capabilities").expect(200);
+    await request(app.getHttpServer()).get(`/API/incidents/${incidentId}/`).expect(200);
+
+    const after = await prisma.incident.findUnique({ where: { id: incidentId } });
+    expect(after?.rootCause).toBe(before?.rootCause ?? null);
+    expect(after?.updatedAt.toISOString()).toBe(before?.updatedAt.toISOString());
+    await expect(prisma.event.count({ where: { incidentId } })).resolves.toBe(eventsBefore);
+  });
+
   it("keeps the 25 newest analyses and accepts a trimmed idempotency key again", async () => {
     const retained = await createRetentionIncident(prisma);
     try {

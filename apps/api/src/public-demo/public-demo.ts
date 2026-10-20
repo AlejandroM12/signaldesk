@@ -7,6 +7,8 @@ type PublicDemoEnv = {
   ANALYSIS_PROVIDER_MODE?: string;
 };
 
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
 export function readPublicDemoConfig(env: PublicDemoEnv): { enabled: boolean } {
   const flag = env.PUBLIC_DEMO_MODE?.trim() ?? "";
   if (flag === "" || flag === "false") {
@@ -43,17 +45,87 @@ export function readApiCapabilities(env: PublicDemoEnv): ApiCapabilities {
   };
 }
 
-export function isPublicDemoRequestBlocked(method: string, path: string): boolean {
-  const verb = method.toUpperCase();
-  const pathname = path.split("?")[0] ?? "";
-  if (verb === "POST" && pathname === "/api/events") {
+/**
+ * Collapse Express-equivalent path variants before comparing allow/deny rules.
+ * Express matches case-insensitively and ignores a trailing slash by default,
+ * but `originalUrl` keeps the client spelling; the guard must not.
+ */
+export function normalizePublicDemoPath(path: string): string {
+  const withoutQuery = path.split("?")[0]?.split("#")[0] ?? "";
+  let decoded = withoutQuery;
+  try {
+    decoded = decodeURIComponent(withoutQuery);
+  } catch {
+    decoded = withoutQuery;
+  }
+
+  const segments = decoded
+    .replace(/\\/g, "/")
+    .toLowerCase()
+    .split("/")
+    .filter((segment) => segment.length > 0 && segment !== ".");
+  const resolved: string[] = [];
+  for (const segment of segments) {
+    if (segment === "..") {
+      resolved.pop();
+      continue;
+    }
+    resolved.push(segment);
+  }
+  return `/${resolved.join("/")}`;
+}
+
+function isMetricsPath(pathname: string): boolean {
+  return pathname === "/api/metrics" || pathname.startsWith("/api/metrics/");
+}
+
+function isAllowedPublicDemoRead(pathname: string): boolean {
+  if (
+    pathname === "/api/health" ||
+    pathname === "/api/health/ready" ||
+    pathname === "/api/capabilities" ||
+    pathname === "/api/incidents"
+  ) {
     return true;
   }
-  if (verb === "GET" && pathname === "/api/metrics") {
+  if (/^\/api\/incidents\/[^/]+$/.test(pathname)) {
     return true;
   }
-  if (verb === "PATCH" && /^\/api\/incidents\/[^/]+$/.test(pathname)) {
+  if (/^\/api\/incidents\/[^/]+\/activity$/.test(pathname)) {
+    return true;
+  }
+  if (/^\/api\/incidents\/[^/]+\/analyses$/.test(pathname)) {
+    return true;
+  }
+  if (/^\/api\/incidents\/[^/]+\/analyses\/[^/]+$/.test(pathname)) {
     return true;
   }
   return false;
+}
+
+function isAllowedPublicDemoAnalyze(pathname: string): boolean {
+  return /^\/api\/incidents\/[^/]+\/analyze$/.test(pathname);
+}
+
+export function isPublicDemoRequestBlocked(method: string, path: string): boolean {
+  const verb = method.toUpperCase();
+  const pathname = normalizePublicDemoPath(path);
+
+  if (isMetricsPath(pathname)) {
+    return true;
+  }
+
+  if (verb === "OPTIONS") {
+    return false;
+  }
+
+  if (SAFE_METHODS.has(verb)) {
+    return !isAllowedPublicDemoRead(pathname);
+  }
+
+  if (verb === "POST" && isAllowedPublicDemoAnalyze(pathname)) {
+    return false;
+  }
+
+  return true;
 }

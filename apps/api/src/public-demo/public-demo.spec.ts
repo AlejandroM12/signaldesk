@@ -5,6 +5,7 @@ import { AppModule } from "../app.module";
 import { PublicDemoGuard } from "./public-demo.guard";
 import {
   isPublicDemoRequestBlocked,
+  normalizePublicDemoPath,
   PUBLIC_DEMO_FORBIDDEN,
   readApiCapabilities,
   readPublicDemoConfig,
@@ -89,25 +90,55 @@ describe("readApiCapabilities", () => {
   });
 });
 
+describe("normalizePublicDemoPath", () => {
+  it("strips query, fragment, trailing slashes, and case differences", () => {
+    expect(normalizePublicDemoPath("/API/metrics/?since=1#top")).toBe("/api/metrics");
+    expect(normalizePublicDemoPath("/api/events/")).toBe("/api/events");
+    expect(normalizePublicDemoPath("/api/./metrics")).toBe("/api/metrics");
+    expect(normalizePublicDemoPath("/api/foo/../metrics")).toBe("/api/metrics");
+    expect(normalizePublicDemoPath("/api/%6Detric%73")).toBe("/api/metrics");
+  });
+});
+
 describe("isPublicDemoRequestBlocked", () => {
-  it("blocks ingest, incident edits, and metrics only", () => {
-    expect(isPublicDemoRequestBlocked("POST", "/api/events")).toBe(true);
-    expect(isPublicDemoRequestBlocked("PATCH", "/api/incidents/11111111-1111-4111-8111-111111111111")).toBe(true);
-    expect(isPublicDemoRequestBlocked("GET", "/api/metrics")).toBe(true);
+  const incidentId = "11111111-1111-4111-8111-111111111111";
+
+  it("allows the public demo reads and the analyze write", () => {
     expect(isPublicDemoRequestBlocked("GET", "/api/capabilities")).toBe(false);
     expect(isPublicDemoRequestBlocked("GET", "/api/health")).toBe(false);
     expect(isPublicDemoRequestBlocked("GET", "/api/health/ready")).toBe(false);
     expect(isPublicDemoRequestBlocked("GET", "/api/incidents")).toBe(false);
-    expect(isPublicDemoRequestBlocked("GET", "/api/incidents/11111111-1111-4111-8111-111111111111")).toBe(false);
-    expect(isPublicDemoRequestBlocked("GET", "/api/incidents/11111111-1111-4111-8111-111111111111/activity")).toBe(
-      false,
-    );
-    expect(isPublicDemoRequestBlocked("GET", "/api/incidents/11111111-1111-4111-8111-111111111111/analyses")).toBe(
-      false,
-    );
-    expect(isPublicDemoRequestBlocked("POST", "/api/incidents/11111111-1111-4111-8111-111111111111/analyze")).toBe(
-      false,
-    );
+    expect(isPublicDemoRequestBlocked("GET", `/api/incidents/${incidentId}`)).toBe(false);
+    expect(isPublicDemoRequestBlocked("GET", `/api/incidents/${incidentId}/activity`)).toBe(false);
+    expect(isPublicDemoRequestBlocked("GET", `/api/incidents/${incidentId}/analyses`)).toBe(false);
+    expect(isPublicDemoRequestBlocked("GET", `/api/incidents/${incidentId}/analyses/${incidentId}`)).toBe(false);
+    expect(isPublicDemoRequestBlocked("POST", `/api/incidents/${incidentId}/analyze`)).toBe(false);
+    expect(isPublicDemoRequestBlocked("OPTIONS", "/api/incidents")).toBe(false);
+  });
+
+  it("blocks metrics and unknown reads after path normalization", () => {
+    expect(isPublicDemoRequestBlocked("GET", "/api/metrics")).toBe(true);
+    expect(isPublicDemoRequestBlocked("GET", "/api/metrics/")).toBe(true);
+    expect(isPublicDemoRequestBlocked("GET", "/API/metrics")).toBe(true);
+    expect(isPublicDemoRequestBlocked("GET", "/api/metrics?since=1")).toBe(true);
+    expect(isPublicDemoRequestBlocked("GET", "/api/./metrics")).toBe(true);
+    expect(isPublicDemoRequestBlocked("GET", "/api/foo/../metrics")).toBe(true);
+    expect(isPublicDemoRequestBlocked("GET", "/api/%6Detric%73")).toBe(true);
+    expect(isPublicDemoRequestBlocked("HEAD", "/API/metrics/")).toBe(true);
+    expect(isPublicDemoRequestBlocked("GET", "/api/unknown")).toBe(true);
+  });
+
+  it("denies writes by default except analyze", () => {
+    expect(isPublicDemoRequestBlocked("POST", "/api/events")).toBe(true);
+    expect(isPublicDemoRequestBlocked("POST", "/api/events/")).toBe(true);
+    expect(isPublicDemoRequestBlocked("POST", "/API/events")).toBe(true);
+    expect(isPublicDemoRequestBlocked("PATCH", `/api/incidents/${incidentId}`)).toBe(true);
+    expect(isPublicDemoRequestBlocked("PATCH", `/API/incidents/${incidentId}`)).toBe(true);
+    expect(isPublicDemoRequestBlocked("PATCH", `/api/incidents/${incidentId}/`)).toBe(true);
+    expect(isPublicDemoRequestBlocked("PUT", `/api/incidents/${incidentId}`)).toBe(true);
+    expect(isPublicDemoRequestBlocked("DELETE", `/api/incidents/${incidentId}`)).toBe(true);
+    expect(isPublicDemoRequestBlocked("POST", "/api/incidents")).toBe(true);
+    expect(isPublicDemoRequestBlocked("POST", `/API/incidents/${incidentId}/analyze/`)).toBe(false);
   });
 });
 
@@ -120,11 +151,18 @@ describe("PublicDemoGuard", () => {
     expect(guard.canActivate(context("GET", "/api/metrics"))).toBe(true);
   });
 
-  it("blocks the public write and metrics routes", () => {
+  it("blocks write and metrics variants while keeping reads and analyze", () => {
     const guard = new PublicDemoGuard(config({ PUBLIC_DEMO_MODE: "true", ANALYSIS_PROVIDER_MODE: "demo" }));
 
     expect(() => guard.canActivate(context("POST", "/api/events"))).toThrow(ForbiddenException);
+    expect(() => guard.canActivate(context("POST", "/api/events/"))).toThrow(PUBLIC_DEMO_FORBIDDEN);
+    expect(() => guard.canActivate(context("POST", "/API/events"))).toThrow(PUBLIC_DEMO_FORBIDDEN);
     expect(() => guard.canActivate(context("GET", "/api/metrics?since=1"))).toThrow(PUBLIC_DEMO_FORBIDDEN);
+    expect(() => guard.canActivate(context("GET", "/api/metrics/"))).toThrow(PUBLIC_DEMO_FORBIDDEN);
+    expect(() => guard.canActivate(context("GET", "/API/metrics"))).toThrow(PUBLIC_DEMO_FORBIDDEN);
+    expect(() =>
+      guard.canActivate(context("PATCH", "/API/incidents/11111111-1111-4111-8111-111111111111")),
+    ).toThrow(PUBLIC_DEMO_FORBIDDEN);
     expect(guard.canActivate(context("GET", "/api/health"))).toBe(true);
     expect(guard.canActivate(context("GET", "/api/capabilities"))).toBe(true);
     expect(
