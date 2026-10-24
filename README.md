@@ -1,59 +1,130 @@
 # SignalDesk
 
-Plataforma de gestión y análisis de incidentes técnicos. Este repositorio contiene la base local: frontend Next.js, API NestJS, contratos compartidos y PostgreSQL.
+Incident console for correlating synthetic error events, investigating open incidents, and generating bounded diagnostic hypotheses. Built as a full-stack portfolio MVP with a public read-mostly demo.
 
-## Requisitos
+**Live demo:** [https://signaldesk-pearl.vercel.app](https://signaldesk-pearl.vercel.app)  
+**Repository:** [https://github.com/AlejandroM12/signaldesk](https://github.com/AlejandroM12/signaldesk)
 
-- Node.js 22.22.3 o superior, o Node.js 24.15 o superior
-- pnpm 11.25.0
-- Docker Desktop, con Docker Compose
+![SignalDesk incident dashboard showing open incidents, status totals, and filters](docs/dashboard.png)
 
-## Instalación
+The public deployment runs NestJS on Render Free, Next.js on Vercel Hobby, and PostgreSQL on Neon Free. Demo analysis uses local deterministic rules (`ANALYSIS_PROVIDER_MODE=demo`). It does **not** call OpenAI.
 
-En PowerShell, desde la raíz del repositorio:
+## Problem and approach
+
+Operational noise rarely arrives as a clean incident. The same timeout can fire many times; edits race; an assistant that invents event IDs is worse than no assistant.
+
+SignalDesk approaches that with a small, verifiable loop:
+
+1. Ingest events with validation, `(source, externalId)` deduplication, and time-window correlation into open incidents.
+2. Investigate with optimistic locking, an append-only activity history, and a paginated incident console.
+3. Request analysis through a provider interface that validates structured output against the incident’s real event IDs before persistence.
+4. Ship a public demo that stays readable while writes and internal metrics are blocked server-side, and analysis is gated by a shared secret on a Next.js proxy.
+
+## Features
+
+- Paginated incident list with status, severity, service, and team filters, plus a global status summary
+- Incident detail with chronological events, editable investigation fields (local mode), and activity history
+- Event ingest with Zod-style Nest validation (`class-validator`), correlation, and duplicate rejection (`409`)
+- Assisted analysis with idempotency keys, leases for concurrent retries, and evidence references constrained to included events
+- Public demo mode: read paths and controlled analysis only; ingest, edits, and `/api/metrics` blocked
+- Same-origin Next.js proxy for analysis (`POST /api/incidents/:id/analyze`) with body limits, timeouts, and server-only secrets
+- In-process metrics snapshot and optional New Relic APM for the API process
+- Health (`/api/health`) and readiness (`/api/health/ready`) endpoints
+
+## Tech stack
+
+Verified from workspace manifests:
+
+| Layer | Technology |
+| --- | --- |
+| Monorepo | pnpm workspaces (`apps/*`, `packages/*`), pnpm `11.25.0`, Node `>=22.22.3` |
+| Web | Next.js `16.4.0`, React `19.3.0`, Tailwind CSS `4`, Vitest |
+| API | NestJS `12`, Prisma `7.10.0`, PostgreSQL (`pg` adapter), Jest, Supertest, Oxlint |
+| Shared | `@signaldesk/contracts` (TypeScript package compiled before web/API) |
+| Analysis adapters | OpenAI SDK `7.32.0` (local/openai mode) or deterministic demo rules |
+| Observability | Structured request logs, in-memory metrics, optional `newrelic` agent |
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Browser["Browser"]
+  Web["Next.js apps/web"]
+  Api["NestJS apps/api"]
+  Db["PostgreSQL"]
+  Provider["Analysis provider\nopenai or demo"]
+
+  Browser -->|"reads, edits, list"| Web
+  Browser -->|"POST analyze same-origin"| Web
+  Web -->|"API_ORIGIN + secret"| Api
+  Browser -->|"GET analyses / incidents"| Api
+  Api --> Db
+  Api --> Provider
+```
+
+```text
+apps/web              Next.js UI and analysis proxy route
+apps/api              NestJS API, Prisma, providers
+packages/contracts    Shared TypeScript contracts
+```
+
+## Technical decisions
+
+### Event correlation and deduplication
+
+`POST /api/events` validates the payload, then persists. Deduplication is unique on `(source, externalId)`; a repeat returns `409` without replaying the first result. Correlation attaches an event to an existing `OPEN` or `INVESTIGATING` incident only when **service** and **error type** match and the event timestamp falls within `EVENT_CORRELATION_WINDOW_MINUTES` of the latest matching event (default 30). Closest distance wins; ties prefer the newer incident. Other services or out-of-window events open a new incident.
+
+### Idempotency and concurrency
+
+Analysis accepts an optional `idempotencyKey` (max 80, `[A-Za-z0-9_-]+`). The same key on the same incident reuses a stored analysis without calling the provider again. Concurrent callers coordinate through `AnalysisOperation` rows with leases; a failed operation can be retried with the same key after failure or lease expiry. Incident edits require `expectedUpdatedAt`; a stale value returns `409` and writes nothing. Successful field changes append `IncidentActivity` in the same transaction.
+
+### Activity history
+
+Each mutating update that changes fields writes `UPDATED` activity with before/after values. Failure to write activity rolls back the update. `GET /api/incidents/:id/activity` returns newest first. `actorId` is `null` (no user auth yet).
+
+### Assisted analysis with evidence
+
+The provider receives a bounded incident context and must return structured hypotheses. The API rejects output that cites event IDs outside the included set (`422`). Results are diagnostic aids only: they do not set root cause, resolution, or status. Stored analyses remain readable after new events arrive; the UI can indicate the snapshot may be stale. Public demo retains at most the 25 newest analyses per incident under a Postgres advisory lock.
+
+### Public demo security
+
+With `PUBLIC_DEMO_MODE=true` the API requires `ANALYSIS_PROVIDER_MODE=demo` and a proxy secret (≥16 characters) at boot. A global guard uses path normalization (case, trailing slash, query strip, segment cleanup) and **default-deny for writes**, allowing only `POST .../analyze` among mutating methods, plus an explicit read allowlist. Metrics stay blocked under path variants. The browser never receives `ANALYSIS_PROXY_SECRET` or `API_ORIGIN`. Analysis goes through Next.js, which validates UUID and body, caps size at 1 KB, times out at 8s (`maxDuration` 10 on Vercel), and attaches the secret only server-to-server. Nest verifies the secret with SHA-256 digests and `timingSafeEqual` before quota or provider work. CORS is a single configured origin; it is not authentication. Global analysis quota remains shared (recommended public values: 20 / hour).
+
+### Observability
+
+Every request gets an `X-Request-Id` (client-supplied if valid, otherwise generated). Access logs are JSON with method, Nest route pattern, status, and duration—no bodies, secrets, or prompts. `GET /api/metrics` exposes process-local counters (lost on restart, blocked in public demo). Optional New Relic APM instruments the API when `NEW_RELIC_ENABLED=true` and a license key is present; it does not instrument Next.js.
+
+## OpenAI provider vs demo provider
+
+| | `ANALYSIS_PROVIDER_MODE=openai` | `ANALYSIS_PROVIDER_MODE=demo` |
+| --- | --- | --- |
+| Network | Calls OpenAI Responses API when `OPENAI_API_KEY` is set | No generative API call |
+| Client | OpenAI client constructed only in this mode | Client is not created, even if a key exists |
+| Persistence | `provider` / model from OpenAI settings | `provider=demo`, `model=demo-rules-v1` |
+| Shared path | Same validation, quota, idempotency, and evidence checks | Same |
+| Public demo | Refused at boot if `PUBLIC_DEMO_MODE=true` | Required for public demo |
+
+Missing `OPENAI_API_KEY` does **not** switch the API to demo mode.
+
+## Run locally
+
+Requirements: Node.js `>=22.22.3` (CI uses 24.15.0), pnpm `11.25.0`, Docker with Compose.
 
 ```powershell
 pnpm install
 Copy-Item .env.example .env
-```
-
-`.env` queda solo en tu máquina. `.env.example` no contiene secretos: los valores de PostgreSQL son placeholders para una base local.
-
-## Variables de entorno
-
-| Variable | Dónde se usa | Descripción |
-| --- | --- | --- |
-| `PORT` | API | Puerto que asigna el host, por ejemplo Render. Si está definido, tiene prioridad sobre `API_PORT`. Un valor vacío se ignora. Un puerto inválido impide el arranque. |
-| `API_PORT` | API | Puerto local de NestJS. Se usa cuando `PORT` no está definido. Por defecto `3001`. El proceso escucha en `0.0.0.0`. |
-| `CORS_ORIGIN` | API | Origen de navegador que puede leer las respuestas. Por defecto `http://localhost:3000`. No autentica a quien llama: un cliente que no sea el navegador puede alcanzar la API igual. |
-| `NEXT_PUBLIC_API_URL` | Web | URL pública de la API. El prefijo `NEXT_PUBLIC_` la copia al navegador. El proxy de análisis no la usa en producción. |
-| `API_ORIGIN` | Web, solo servidor | Origen fijo de NestJS para el proxy de análisis. No lleva el prefijo `NEXT_PUBLIC_`. En producción tiene que ser `https`, absoluta, y sin usuario, contraseña, ruta, parámetros ni fragmento. En local, si falta, el proxy usa `NEXT_PUBLIC_API_URL`. |
-| `ANALYSIS_PROXY_SECRET` | API y Web, solo servidor | Secreto compartido del análisis. Obligatorio con `PUBLIC_DEMO_MODE=true`. El mismo valor va en Render y en Vercel. No se commitea y no lleva el prefijo `NEXT_PUBLIC_`. Vacío en el uso local sin demo pública. |
-| `POSTGRES_USER` | Docker y API | Usuario local de PostgreSQL. |
-| `POSTGRES_PASSWORD` | Docker y API | Contraseña local de PostgreSQL. |
-| `POSTGRES_DB` | Docker y API | Nombre de la base local. |
-| `POSTGRES_PORT` | Docker | Puerto publicado en el host. |
-| `DATABASE_URL` | API y Prisma | Cadena de conexión. No la uses en el frontend. Cada proceso abre como máximo 3 conexiones. SSL y el host quedan en esta cadena. |
-| `EVENT_CORRELATION_WINDOW_MINUTES` | API | Minutos para asociar un evento a un incidente abierto del mismo servicio y tipo de error. Si no está definida, usa 30. |
-| `ANALYSIS_PROVIDER_MODE` | API | `openai` o `demo`. Si no está definida, usa OpenAI. `demo` aplica reglas locales al contexto del incidente y no llama a un modelo generativo. La falta de `OPENAI_API_KEY` no activa demo. Otro valor impide que la API arranque. |
-| `PUBLIC_DEMO_MODE` | API | `true` publica una demo compartida: deja las lecturas y el análisis demo, y bloquea la ingesta, la edición y las métricas. Exige `ANALYSIS_PROVIDER_MODE=demo` y `ANALYSIS_PROXY_SECRET`. Ausente o `false` conserva el flujo local completo. Otro valor impide que la API arranque. |
-| `OPENAI_API_KEY` | API | Clave de OpenAI. Solo vive en el servidor. Con el modo `openai`, si falta, el análisis responde que no está configurado y el resto de la API sigue funcionando. |
-| `OPENAI_MODEL` | API | Modelo de la llamada. Por defecto `gpt-6-luna`. |
-| `OPENAI_TIMEOUT_MS` | API | Tiempo máximo de la llamada, en milisegundos. Por defecto `20000`. |
-| `OPENAI_MAX_OUTPUT_TOKENS` | API | Tope de tokens de salida, incluidos los de razonamiento. Por defecto `1200`. |
-| `OPENAI_REASONING_EFFORT` | API | Esfuerzo de razonamiento enviado a la API. Por defecto `none`, para no gastar tokens de razonamiento. Algunos modelos rechazan `none`. |
-| `NEW_RELIC_ENABLED` | API | `true` inicia el agente de New Relic. Cualquier otro valor lo deja apagado. |
-| `NEW_RELIC_APP_NAME` | API | Nombre estable en New Relic. El valor previsto es `SignalDesk-API`. |
-| `NEW_RELIC_LICENSE_KEY` | API | Clave de licencia. Solo en el `.env` local o en el gestor de secretos. No va al frontend. |
-
-## Comandos
-
-```powershell
 pnpm db:up
-pnpm db:migrate -- --name add_incidents_and_events
 pnpm db:migrate:deploy
 pnpm db:seed
 pnpm dev
+```
+
+- Web: [http://localhost:3000](http://localhost:3000)
+- API: [http://localhost:3001](http://localhost:3001)
+
+Other useful commands:
+
+```powershell
 pnpm dev:api
 pnpm dev:web
 pnpm test
@@ -63,157 +134,54 @@ pnpm build
 pnpm db:down
 ```
 
-- `pnpm db:up` levanta PostgreSQL.
-- `pnpm db:migrate` crea y aplica una migración en desarrollo. El nombre va después de `--`.
-- `pnpm db:migrate:deploy` aplica migraciones ya existentes.
-- `pnpm db:seed` carga incidentes y eventos sintéticos. Se puede ejecutar más de una vez.
-- `pnpm dev` compila los contratos y arranca la web en el puerto 3000 y la API en el puerto 3001.
-- `pnpm test` ejecuta las pruebas unitarias de la API. `pnpm test:e2e` también levanta Prisma y necesita PostgreSQL en marcha.
-- `pnpm db:down` detiene PostgreSQL y conserva el volumen de datos.
+`pnpm db:migrate -- --name <name>` creates a new development migration. Prefer `db:migrate:deploy` when applying existing migrations. Seed data is synthetic and idempotent (`ON CONFLICT DO NOTHING`).
 
-Para reiniciar en desarrollo, detenés el proceso con `Ctrl+C` en la terminal donde corre `pnpm dev`, `pnpm dev:api` o `pnpm dev:web`, y volvés a ejecutar el mismo comando. La web y la API se reinician por separado si las arrancaste con `dev:web` y `dev:api`.
+For local OpenAI analysis, set `OPENAI_API_KEY` in `.env` and keep `ANALYSIS_PROVIDER_MODE=openai` (or unset). For a local public-demo style setup, set `PUBLIC_DEMO_MODE=true`, `ANALYSIS_PROVIDER_MODE=demo`, and a long `ANALYSIS_PROXY_SECRET` on both API and web (via root `.env` / Next server env).
 
-La página inicial lista los incidentes guardados. El detalle de cada incidente muestra sus eventos en orden cronológico.
+## Environment variables
 
-`GET /api/health` informa si el proceso de la API está vivo. No consulta PostgreSQL: un problema de base no debe marcar la liveness como caída. `GET /api/health/ready` hace un `SELECT 1` y responde `503` si la base no contesta.
+Copy `.env.example` to `.env`. Do not commit real secrets. Only `NEXT_PUBLIC_*` values are exposed to the browser.
 
-`GET /api/metrics` devuelve contadores en memoria desde el arranque de ese proceso. Es un diagnóstico local del MVP. No tiene autenticación: hay que protegerlo antes de exponer la API en público. No incluye secretos, mensajes de eventos, prompts ni identificadores de cada solicitud.
+| Variable | Used by | Notes |
+| --- | --- | --- |
+| `PORT` | API | Host-assigned port (e.g. Render). Wins over `API_PORT` when set. |
+| `API_PORT` | API | Local Nest port (default `3001`). Listens on `0.0.0.0`. |
+| `CORS_ORIGIN` | API | Allowed browser origin. Not authentication. |
+| `NEXT_PUBLIC_API_URL` | Web | Public API URL for browser reads. |
+| `API_ORIGIN` | Web (server) | Nest origin for the analysis proxy. Production must be `https` without credentials, path, query, or fragment. |
+| `ANALYSIS_PROXY_SECRET` | API + Web (server) | Shared analyze secret; required when `PUBLIC_DEMO_MODE=true`. Never use a `NEXT_PUBLIC_` prefix. |
+| `POSTGRES_*` | Docker / local | Local Postgres user, password, database, published port. |
+| `DATABASE_URL` | API / Prisma | Connection string. Not used by the frontend. Pool max 3 connections per process. |
+| `EVENT_CORRELATION_WINDOW_MINUTES` | API | Correlation window (default `30`). |
+| `ANALYSIS_PROVIDER_MODE` | API | `openai` or `demo`. |
+| `PUBLIC_DEMO_MODE` | API | `true` / `false`. `true` requires demo provider + proxy secret. |
+| `OPENAI_API_KEY` | API | Server-only. Required for successful openai-mode analysis. |
+| `OPENAI_MODEL` | API | Default `gpt-6-luna`. |
+| `OPENAI_TIMEOUT_MS` | API | Default `20000`. |
+| `OPENAI_MAX_OUTPUT_TOKENS` | API | Default `1200`. |
+| `OPENAI_REASONING_EFFORT` | API | Default `none`. |
+| `ANALYSIS_RATE_LIMIT` | API | Global new-analysis cap (local default `10`). |
+| `ANALYSIS_RATE_WINDOW_MS` | API | Cap window in ms (local default `60000`). Public demo recommendation: `20` / `3600000`. |
+| `NEW_RELIC_ENABLED` | API | Must be exactly `true` to start the agent. |
+| `NEW_RELIC_APP_NAME` | API | Expected `SignalDesk-API`. |
+| `NEW_RELIC_LICENSE_KEY` | API | Server-only license key. |
 
-`GET /api/incidents` devuelve incidentes paginados (`page`, `limit`) con filtros opcionales `status`, `severity`, `service` y `team`. El orden es por fecha de creación descendente. `summary` cuenta abiertos, en investigación y resueltos en toda la base, sin aplicar esos filtros.
+## Testing and CI
 
-`GET /api/incidents/:id` devuelve un incidente y sus eventos ordenados por timestamp. Si no existe, responde `404`.
+- API unit tests: Jest (`pnpm test`)
+- API e2e tests: Jest + Supertest against local PostgreSQL (`pnpm test:e2e`, sequential workers to avoid races on shared `AnalysisRateState`)
+- Web tests: Vitest (`pnpm --filter @signaldesk/web test`)
+- Lint: Oxlint (API), ESLint (web)
+- GitHub Actions (`.github/workflows/ci.yml`): install, build contracts, Prisma generate, lint, unit tests, frontend tests, build; separate job applies migrations and runs e2e on Postgres 18
 
-`PATCH /api/incidents/:id` actualiza el estado, la causa raíz, la resolución, el equipo y el responsable. Hay que enviar `expectedUpdatedAt` con el `updatedAt` recibido en la última lectura. Si otro cambio ya avanzó esa fecha, la API responde `409` y no escribe nada. Un campo omitido no se modifica; `null` borra la causa raíz, la resolución o el responsable. El equipo no acepta `null`. No se pueden cambiar el id, la fecha de creación ni los eventos.
+## Known MVP limitations
 
-Transiciones permitidas: `OPEN → INVESTIGATING`, `INVESTIGATING → RESOLVED`, `INVESTIGATING → OPEN` y `RESOLVED → OPEN`. Se puede conservar el estado actual. `OPEN → RESOLVED` no está permitido: primero hay que investigarlo. `CLOSED` existe en el modelo, pero este ciclo no entra ni sale de ese estado. Resolver exige una resolución con texto. Reabrir no borra la causa ni la resolución, y sí limpia `resolvedAt`.
-
-Cada operación que cambia algo escribe una fila en `IncidentActivity`, en la misma transacción. Si el historial falla, la actualización se revierte. La acción es `UPDATED` y `changes` guarda el valor anterior y el nuevo de cada campo modificado. `actorId` queda `null` porque todavía no hay autenticación.
-
-`GET /api/incidents/:id/activity` devuelve ese historial, del más reciente al más antiguo. Si el incidente no existe, responde `404`.
-
-`POST /api/events` valida un evento, lo guarda y lo asocia a un incidente. Dos eventos se agrupan solo si tienen el mismo servicio, el mismo tipo de error y sus timestamps caen dentro de `EVENT_CORRELATION_WINDOW_MINUTES` de un incidente abierto (`OPEN` o `INVESTIGATING`). Un evento de otro servicio, o el mismo error fuera de esa ventana, abre otro incidente. La causa raíz y la solución quedan vacías. Un identificador externo se deduplica junto con `source`; si se repite, la API responde `409`. Esa respuesta no repite el resultado original.
-
-## Observabilidad
-
-Cada solicitud HTTP recibe un `requestId`. Si el header `X-Request-Id` trae entre 8 y 64 caracteres de `[A-Za-z0-9_-]`, se usa ese valor. Si falta o no cumple el formato, la API genera uno con `crypto.randomUUID()` y no propaga el valor inválido. La respuesta lo devuelve en `X-Request-Id`.
-
-Al terminar la solicitud se escribe una línea JSON con método, ruta normalizada, status y duración. La duración usa `process.hrtime`. La ruta es el patrón de Nest, por ejemplo `/api/health`, no la URL con ids ni query string. No se registran cuerpos, headers de autorización, claves, mensajes de eventos, metadata ni prompts. Un error HTTP conocido queda en esa línea de acceso. Una excepción no controlada agrega una sola línea `http_error` con el `requestId` y el status `500`, sin el texto de la excepción. Las métricas no se registran dos veces para el mismo resultado.
-
-`GET /api/metrics` se consulta así:
-
-```powershell
-Invoke-RestMethod http://localhost:3001/api/metrics
-```
-
-Los contadores significan:
-
-- `http.requests`, `http.errors` y `http.durationMsTotal`: cada solicitud cuenta una vez. El error es un status de 400 o más. La media es `durationMsTotal / requests` cuando hay solicitudes.
-- `events.accepted`: eventos persistidos. `events.duplicates`: conflictos `409`, que no cuentan como aceptados ni como rechazados. `events.rejected`: validación `400` o fallo `5xx` de `POST /api/events`.
-- `incidents.created`: incidentes nuevos creados por la ingesta. No incluye los que ya existían.
-- `analysis.succeeded`: análisis nuevos guardados después de llamar al proveedor. `analysis.failed`: llamadas al proveedor que no se guardaron. `analysis.discarded`: la llamada encontró un análisis que otra solicitud ya había guardado para la misma clave. `analysis.providerCalls` y `analysis.durationMsTotal` miden solo llamadas reales al proveedor. Recuperar un resultado ya guardado no suma ninguna de esas cifras. `analysis.quotaRejected` es el límite local, antes de llamar al proveedor. `providerErrors` separa `timeout`, `rate_limit`, `provider`, `invalid_output` y `not_configured`.
-- `analysisQuota` lee la fila de PostgreSQL: `requestCount` dentro de la ventana y el límite configurado. Si esa lectura falla, el campo es `null` y la interfaz muestra que no está disponible.
-
-Las métricas viven en la memoria del proceso. Se pierden al reiniciar la API y no se comparten entre instancias. La página inicial las muestra en la sección Operación, con una carga inicial y un botón para actualizar. Un cero es una observación real; un fallo de la consulta no se rellena con ceros inventados.
-
-Antes de un despliegue público hay que proteger `GET /api/metrics` y `GET /api/health/ready`. Un límite anónimo y un endpoint de diagnóstico abierto no alcanzan.
-
-## New Relic APM
-
-El agente oficial `newrelic` instrumenta la API NestJS: transacciones HTTP, tiempos y errores del proceso. No instrumenta Next.js. Las métricas en memoria de `GET /api/metrics` siguen siendo independientes.
-
-El agente se carga en el primer módulo de `main.ts`, antes de que NestJS importe Express y el resto de la aplicación. Antes de eso lee el `.env` del directorio de trabajo y, si hace falta, el de la raíz del monorepo. Una variable que ya esté en el proceso no se pisa. `NEW_RELIC_ENABLED` tiene que ser exactamente `true` y `NEW_RELIC_LICENSE_KEY` no puede estar vacía. Si falta la clave, la API arranca igual y no imprime ningún secreto. Las pruebas unitarias y e2e corren bajo Jest y no cargan el agente.
-
-Para dejarlo apagado, en el `.env` local:
-
-```text
-NEW_RELIC_ENABLED=false
-NEW_RELIC_APP_NAME=SignalDesk-API
-NEW_RELIC_LICENSE_KEY=
-```
-
-Para habilitarlo, pegá la clave solo en ese `.env` y cambiá `NEW_RELIC_ENABLED=true`. Después, desde PowerShell en la raíz del repositorio:
-
-```powershell
-pnpm dev:api
-```
-
-Para una sesión apagada aunque el `.env` diga `true`:
-
-```powershell
-$env:NEW_RELIC_ENABLED = "false"
-pnpm dev:api
-```
-
-El proceso de producción usa el mismo arranque:
-
-```powershell
-pnpm --filter @signaldesk/api start:prod
-```
-
-En [New Relic](https://one.newrelic.com/) abrí APM y buscá `SignalDesk-API`. Generá tráfico, por ejemplo `Invoke-RestMethod http://localhost:3001/api/health`, y esperá unos minutos. Las transacciones deberían verse con la ruta de Nest, como `GET /api/health` o `GET /api/incidents/:id`, no con el id de cada incidente. Esta guía no confirma que los datos hayan llegado: eso depende de una clave real.
-
-Si no aparece nada, revisá que la API se haya reiniciado después de cambiar el `.env`, que `NEW_RELIC_ENABLED` sea `true`, que la clave corresponda a la misma región de la cuenta y que el log de la API no diga que el agente quedó apagado. No hace falta un archivo de configuración con la clave: `apps/api/newrelic.js` la lee del entorno.
-
-No se envían cuerpos, headers, parámetros de ruta ni de query. El agente reemplaza el mensaje de las excepciones por un texto genérico y redacta ese mensaje en la primera línea del stack. El SQL de los traces queda ofuscado. El reenvío de logs está apagado, así que el texto de un análisis no sale por los logs de la aplicación. El monitoreo de navegador está apagado. Los status `400`, `401`, `403`, `404`, `409`, `422` y `429` no se cuentan como errores de APM. Las métricas nativas de V8 (`@newrelic/native-metrics`) no están habilitadas. `request.uri` puede conservar la ruta concreta, incluido el id de un incidente; el nombre de la transacción sigue siendo el patrón de Nest.
-
-Si `NEW_RELIC_ENABLED` no es exactamente `true`, o si falta la clave, el agente no arranca y la API sigue disponible. Una clave vacía no se imprime.
-
-Cuando el agente sí arrancó, cada ejecución real del análisis también suma métricas agregadas. El agente les antepone `Custom/`. Los nombres que quedan en New Relic son `Custom/SignalDesk/Analysis/Success`, `Custom/SignalDesk/Analysis/Failure`, `Custom/SignalDesk/Analysis/Failure/Timeout`, `Custom/SignalDesk/Analysis/Failure/InvalidOutput`, `Custom/SignalDesk/Analysis/Failure/Provider`, `Custom/SignalDesk/Analysis/Failure/ProviderRateLimit`, `Custom/SignalDesk/Analysis/Failure/NotConfigured`, `Custom/SignalDesk/Analysis/Discarded`, `Custom/SignalDesk/Analysis/DurationMs` y `Custom/SignalDesk/RateLimit/Rejected`. La duración usa el mismo reloj monotónico del proceso. No llevan id de incidente, prompt ni texto del análisis. Leer un análisis guardado no suma. Un fallo del agente no cambia el resultado del análisis. Esta guía no confirma que esas métricas hayan aparecido en la cuenta.
-
-Para comprobar solo la ingestión, sin análisis ni OpenAI, hay un script local. Exige `NEW_RELIC_ENABLED=true` y una clave no vacía. Registra una sola métrica fija, `SignalDesk/Probe/Ingestion`, y pide el envío final antes de salir. No forma parte de `dev`, `build` ni `start:prod`.
-
-```powershell
-pnpm --filter @signaldesk/api newrelic:probe
-```
-
-Después de un minuto:
-
-```sql
-SELECT count(newrelic.timeslice.value)
-FROM Metric
-WHERE appName = 'SignalDesk-API'
-AND metricTimesliceName = 'Custom/SignalDesk/Probe/Ingestion'
-SINCE 30 minutes ago
-```
-
-Esa consulta no confirma el envío hasta que la ejecutes con la clave real. `average(newrelic.timeslice.value)` puede quedar en 0 porque el conteo se guarda con total cero.
-
-## Análisis asistido
-
-El detalle de un incidente puede pedir una hipótesis a partir de sus eventos reales. El resultado es una ayuda de diagnóstico: no confirma la causa raíz, no completa la resolución y no cambia el estado. Esos campos solo cambian si una persona los guarda en el formulario.
-
-La web no llama a OpenAI. El navegador pide el análisis a Next.js, y Next.js llama a `POST /api/incidents/:id/analyze`. Esa ruta arma un contexto limitado, pide una salida estructurada y, si la respuesta cita solo eventos de ese incidente, guarda el análisis. `GET /api/incidents/:id/analyses` y `GET /api/incidents/:id/analyses/:analysisId` leen lo ya guardado y no vuelven a llamar al proveedor. El módulo separa el caso de uso, los adaptadores de proveedor, el recorte del contexto y la validación. No hay herramientas, agentes ni embeddings.
-
-No hay autenticación. `ANALYSIS_RATE_LIMIT` (por defecto 10) y `ANALYSIS_RATE_WINDOW_MS` (por defecto 60000) limitan los análisis nuevos de toda la API, no de cada usuario: la aplicación no tiene identidad contra la cual contar. El cupo vive en PostgreSQL y se descuenta antes de llamar a OpenAI, así que vale entre procesos y una solicitud rechazada no genera costo. Releer el historial, el incidente o la salud no consume cupo. Tampoco lo consume repetir una clave que ya tiene un análisis guardado. Un rechazo por ese cupo no deja una operación `FAILED`: se borra solo la fila de esa solicitud, identificada por su id y su arrendamiento. Si otra solicitud ya tomó la misma clave, esa limpieza no la borra ni la marca fallida. Un fallo del proveedor sí deja la operación `FAILED` para que la misma clave pueda reintentarse. Un servicio expuesto en público no debe depender solo de este límite anónimo. Para ese despliegue se recomienda `ANALYSIS_RATE_LIMIT=20` y `ANALYSIS_RATE_WINDOW_MS=3600000`, es decir 20 análisis por hora para toda la API. Los valores por defecto de arriba siguen siendo los del uso local.
-
-`ANALYSIS_PROVIDER_MODE` elige el adaptador. Sin la variable, o con `openai`, se usa OpenAI. El valor `demo` genera el resultado con reglas locales sobre el contexto ya armado: no llama a un modelo generativo, no inventa identificadores y se guarda con `provider` `demo` y `model` `demo-rules-v1`. En ese modo la API no crea el cliente de OpenAI, aunque exista `OPENAI_API_KEY`. La ausencia de la clave no cambia el modo a demo. Cualquier otro valor impide que la API arranque. El modo demo sigue pasando por la validación, el cupo y la idempotencia.
-
-`PUBLIC_DEMO_MODE=true` es la demo pública compartida. Solo arranca si `ANALYSIS_PROVIDER_MODE` vale exactamente `demo` y `ANALYSIS_PROXY_SECRET` tiene al menos 16 caracteres. Si el secreto falta, la API no arranca. En ese modo siguen disponibles la salud, el listado, el detalle, el historial de actividad y el historial de análisis. `POST /api/incidents/:id/analyze` exige el secreto antes de consumir cupo o crear una operación. Quedan bloqueados `POST /api/events`, `PATCH /api/incidents/:id` y `GET /api/metrics`. Los incidentes y su historial son los mismos para todos los visitantes: no hay sesiones ni datos aislados. El cupo de análisis sigue siendo el de toda la API. Cada incidente conserva como máximo los 25 análisis más recientes, ordenados por fecha de creación y, si empatan, por id. Ese recorte ocurre en la misma transacción que el guardado y espera un lock de Postgres por incidente, así que dos análisis simultáneos no dejan más de 25. `GET /api/incidents/:id/analyses` también devuelve como máximo esos 25. El modo local no borra historial y el listado local no tiene ese tope. Si una clave pertenecía a un análisis ya recortado, un nuevo `POST` con esa clave crea otro análisis; no devuelve el id eliminado. Sin la variable, o con `false`, el flujo local completo no cambia.
-
-El navegador envía `{ idempotencyKey }` a `POST /api/incidents/:id/analyze` en el mismo origen de Next.js. Esa ruta solo acepta POST, valida el id como UUID y acepta únicamente ese campo opcional, de hasta 80 caracteres. Rechaza un cuerpo mayor de 1 KB, aunque `Content-Length` falte o no coincida. El destino sale de `API_ORIGIN`, una variable de servidor. En producción tiene que ser `https` y no puede traer credenciales, ruta, parámetros ni fragmento. En local, si `API_ORIGIN` falta, usa `NEXT_PUBLIC_API_URL`. La ruta agrega `ANALYSIS_PROXY_SECRET` solo en la llamada de servidor a servidor y no lo copia a la respuesta. No reenvía cookies, `Authorization`, `Host` ni `X-Forwarded-For`. El tiempo de espera es de 8 segundos, por debajo del límite corto de Vercel Hobby. En Render hay que definir el secreto junto con `PUBLIC_DEMO_MODE=true` y `ANALYSIS_PROVIDER_MODE=demo`. En Vercel hay que definir el mismo secreto y `API_ORIGIN` con la URL `https` de Render. Una variable `NEXT_PUBLIC_` queda en el JavaScript del navegador; estas dos no llevan ese prefijo. Sin demo pública, NestJS acepta el POST directo y el proxy local funciona con el secreto vacío. Los GET de análisis siguen yendo a la API y siguen siendo públicos. El secreto impide llamar al host de NestJS sin pasar por Next.js. Quien usa el sitio público todavía puede pedir análisis hasta el cupo de 20 por hora. No hay un límite persistente por IP y las lecturas siguen abiertas.
-
-`GET /api/capabilities` dice si este proceso acepta editar incidentes, ingerir eventos, pedir un análisis y ver las métricas internas. No incluye secretos ni nombres de variables. La web lo consulta al abrir un incidente: si la edición no está permitida, muestra los campos en solo lectura y no ofrece guardar ni cambiar el estado. El panel de operación también lo consulta y, si las métricas no están permitidas, no llama a `GET /api/metrics`. Si no puede leer esa respuesta, tampoco habilita la edición ni las métricas. El guard de la API sigue siendo quien rechaza la operación. `CORS_ORIGIN` no autentica a quien llama.
-
-Con el modo `openai`, si falta `OPENAI_API_KEY`, ese endpoint responde `503` y la API igual arranca. Un timeout responde `504`, un fallo del proveedor `502`, el límite de la API o del proveedor `429` y una respuesta inválida o con eventos ajenos `422`. Esos casos no se guardan como análisis exitosos. La clave no se escribe en la base, en los logs ni en la respuesta.
-
-Un análisis viejo sigue disponible después de que lleguen eventos nuevos, y la interfaz avisa que puede no describir el incidente actual. Si el contexto se recortó, también queda registrado. La misma `idempotencyKey` en el mismo incidente identifica una sola operación. PostgreSQL guarda esa operación con un arrendamiento: la otra solicitud espera y, si la primera termina bien, recibe el mismo análisis sin llamar al proveedor. La misma clave en otro incidente es otra operación y no devuelve el análisis ajeno. Si el proveedor falla, la operación queda `FAILED` y un reintento explícito con la misma clave puede volver a llamar. Si el proceso cae, el arrendamiento vence (el timeout configurado de OpenAI más 15 segundos) y un reintento posterior puede tomar la operación; no queda bloqueada para siempre. Antes de guardar, la solicitud vuelve a comprobar que sigue siendo dueña del arrendamiento. Si otro proceso ya lo tomó, no escribe el análisis ni pisa esa operación. Eso no garantiza una única llamada externa: una caída después de haber enviado la solicitud, o una llamada que sigue en curso cuando vence el arrendamiento, puede producir una segunda invocación. Sin `idempotencyKey` no hay coordinación entre solicitudes concurrentes.
-
-### Configurar OpenAI
-
-1. Creá una clave en [API keys](https://platform.openai.com/api-keys).
-2. Copiala en el `.env` local como `OPENAI_API_KEY`. No la subas al repositorio.
-3. Reiniciá la API. El modelo por defecto es `gpt-6-luna` porque la documentación de OpenAI lo presenta para tareas de alto volumen y admite salida estructurada. El 11 de octubre de 2026, la tarifa estándar de contexto corto publicada era USD 0,10 por millón de tokens de entrada y USD 0,50 por millón de salida. Esos valores cambian: revisá [el modelo](https://developers.openai.com/api/docs/models/gpt-6-luna) y [los precios](https://developers.openai.com/api/docs/pricing).
-4. Para usar otro modelo, cambiá `OPENAI_MODEL`. Si ese modelo no acepta `reasoning.effort = none`, ajustá `OPENAI_REASONING_EFFORT`. Subir el esfuerzo consume más tokens de salida.
-5. El consumo y los límites de gasto se controlan en la plataforma de OpenAI: [Usage](https://platform.openai.com/usage) y [Limits](https://platform.openai.com/settings/organization/limits). SignalDesk no calcula un precio por análisis.
-
-Las pruebas unitarias y e2e sustituyen al proveedor y no consumen tokens. Sin una clave, y con el modo `openai`, el botón del detalle muestra el error de configuración y el resto de la página sigue usable.
-
-## Estructura
-
-```text
-apps/web        Next.js
-apps/api        NestJS, Prisma y PostgreSQL
-packages/contracts
-```
-
-El cliente de Prisma se genera en `apps/api/src/generated` y no se versiona. `pnpm dev` y `pnpm build` lo regeneran.
+- No end-user authentication or multi-tenant isolation; the public demo is a shared dataset
+- Analysis quota is global to the API process/database row, not per visitor or IP
+- `CORS_ORIGIN` restricts browsers only; non-browser clients can still call the API if reachable
+- In-memory metrics are per process and are cleared on restart
+- Optimistic locking and analysis leases reduce races but do not eliminate every duplicate external provider call after crashes
+- Correlation never merges different services; multiple open incidents can exist for the same service and error type outside the window
+- `CLOSED` exists in the model but the current edit cycle does not transition into or out of it
+- New Relic is optional and API-only; browser monitoring is off
+- Free-tier hosts may cold-start; the analysis proxy times out at 8 seconds
