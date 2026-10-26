@@ -13,6 +13,12 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { SeverityBadge, StatusBadge } from "@/components/incident-badges";
+import {
+  KpiCard,
+  KpiInvestigatingIcon,
+  KpiOpenIcon,
+  KpiResolvedIcon,
+} from "@/components/kpi-card";
 import { Button } from "@/components/ui/button";
 import { OperationsPanel } from "@/components/operations-panel";
 import { ApiError } from "@/lib/api";
@@ -131,20 +137,36 @@ export function IncidentDashboard() {
   const summary = visible.status === "ready" ? visible.data.summary : null;
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Incidentes</h1>
-        <p className="mt-1 max-w-2xl text-sm text-ink-muted">
+    <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
+      <header className="space-y-2">
+        <p className="text-sm font-medium text-action">Observabilidad</p>
+        <h1 className="text-3xl font-semibold tracking-tight text-ink">Incidentes</h1>
+        <p className="max-w-2xl text-sm leading-6 text-ink-muted">
           Consultá los incidentes persistidos, filtrá el listado y abrí cada uno para ver el
           timeline de eventos.
         </p>
-      </div>
+      </header>
 
-      <section aria-label="Totales por estado" className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
-        <dl className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
-          <SummaryStat label="Abiertos" value={summary?.open} />
-          <SummaryStat label="Investigando" value={summary?.investigating} />
-          <SummaryStat label="Resueltos" value={summary?.resolved} />
+      <section aria-label="Totales por estado" className="space-y-3">
+        <dl className="grid gap-3 sm:grid-cols-3">
+          <KpiCard
+            label="Abiertos"
+            value={summary?.open}
+            tone="open"
+            icon={<KpiOpenIcon />}
+          />
+          <KpiCard
+            label="En investigación"
+            value={summary?.investigating}
+            tone="investigating"
+            icon={<KpiInvestigatingIcon />}
+          />
+          <KpiCard
+            label="Resueltos"
+            value={summary?.resolved}
+            tone="resolved"
+            icon={<KpiResolvedIcon />}
+          />
         </dl>
         <p className="text-xs text-ink-muted">
           Totales de todos los incidentes, sin aplicar los filtros del listado.
@@ -152,7 +174,7 @@ export function IncidentDashboard() {
       </section>
 
       <form
-        className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-3 sm:p-4 lg:flex-row lg:items-end"
+        className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4 sm:p-5 lg:flex-row lg:items-end"
         onSubmit={(event) => {
           event.preventDefault();
           const field = new FormData(event.currentTarget).get("service");
@@ -184,52 +206,65 @@ export function IncidentDashboard() {
           <ServiceField key={service} service={service} />
         </div>
         <div className="grid grid-cols-2 gap-2 lg:flex lg:shrink-0">
-          <Button type="submit">Filtrar</Button>
-          <Button type="button" variant="secondary" onClick={() => router.replace("/", { scroll: false })}>
+          <Button type="submit" className="h-10 px-4">
+            Filtrar
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-10 px-4 hover:bg-surface-muted"
+            onClick={() => router.replace("/", { scroll: false })}
+          >
             Limpiar
           </Button>
         </div>
       </form>
 
-      <section aria-live="polite" aria-busy={visible.status === "loading"}>
-        {visible.status === "loading" ? <StatusMessage>Cargando incidentes…</StatusMessage> : null}
+      <section aria-live="polite" aria-busy={visible.status === "loading"} className="space-y-4">
+        {visible.status === "loading" ? (
+          <StatusMessage tone="loading">Cargando incidentes…</StatusMessage>
+        ) : null}
         {visible.status === "error" ? (
-          <StatusMessage>
+          <StatusMessage tone="error">
             <p>{visible.error.message}</p>
-            <Button type="button" className="mt-3" onClick={() => setAttempt((current) => current + 1)}>
+            <Button
+              type="button"
+              className="mt-3"
+              onClick={() => setAttempt((current) => current + 1)}
+            >
               Reintentar
             </Button>
           </StatusMessage>
         ) : null}
         {visible.status === "ready" && visible.data.items.length === 0 ? (
-          <StatusMessage>No hay incidentes para mostrar con esos filtros.</StatusMessage>
+          <StatusMessage tone="empty">No hay incidentes para mostrar con esos filtros.</StatusMessage>
         ) : null}
         {visible.status === "ready" && visible.data.items.length > 0 ? (
           <>
             <div className="hidden overflow-hidden rounded-xl border border-line bg-surface md:block">
               <table className="w-full border-collapse text-left text-sm">
                 <caption className="sr-only">Incidentes</caption>
-                <thead className="border-b border-line text-xs text-ink-muted">
+                <thead className="border-b border-line bg-surface-muted/60 text-xs uppercase tracking-wide text-ink-muted">
                   <tr>
-                    <th className="px-4 py-2.5 font-medium" scope="col">
+                    <th className="px-4 py-3 font-medium" scope="col">
                       Título
                     </th>
-                    <th className="px-4 py-2.5 font-medium" scope="col">
+                    <th className="px-4 py-3 font-medium" scope="col">
                       Servicio
                     </th>
-                    <th className="px-4 py-2.5 font-medium" scope="col">
+                    <th className="px-4 py-3 font-medium" scope="col">
                       Severidad
                     </th>
-                    <th className="px-4 py-2.5 font-medium" scope="col">
+                    <th className="px-4 py-3 font-medium" scope="col">
                       Estado
                     </th>
-                    <th className="px-4 py-2.5 font-medium" scope="col">
+                    <th className="px-4 py-3 font-medium" scope="col">
                       Equipo
                     </th>
-                    <th className="px-4 py-2.5 font-medium" scope="col">
+                    <th className="px-4 py-3 font-medium" scope="col">
                       Fecha
                     </th>
-                    <th className="px-4 py-2.5 text-right font-medium" scope="col">
+                    <th className="px-4 py-3 text-right font-medium" scope="col">
                       Eventos
                     </th>
                   </tr>
@@ -238,40 +273,42 @@ export function IncidentDashboard() {
                   {visible.data.items.map((incident) => (
                     <tr
                       key={incident.id}
-                      className="border-t border-line hover:bg-surface-muted focus-within:bg-surface-muted"
+                      className="border-t border-line transition hover:bg-surface-muted/70 focus-within:bg-surface-muted/70"
                     >
-                      <th className="px-4 py-3 font-medium" scope="row">
+                      <th className="px-4 py-3.5 font-medium" scope="row">
                         <Link
                           href={`/incidents/${incident.id}`}
-                          className="text-ink underline-offset-4 hover:underline"
+                          className="text-ink underline-offset-4 transition hover:text-action hover:underline"
                         >
                           {incident.title}
                         </Link>
                       </th>
-                      <td className="px-4 py-3 text-ink-muted">{incident.service}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="px-4 py-3.5 text-ink-muted">{incident.service}</td>
+                      <td className="px-4 py-3.5 whitespace-nowrap">
                         <SeverityBadge severity={incident.severity} />
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="px-4 py-3.5 whitespace-nowrap">
                         <StatusBadge status={incident.status} />
                       </td>
-                      <td className="px-4 py-3 text-ink-muted">{teamLabels[incident.team]}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-ink-muted">
+                      <td className="px-4 py-3.5 text-ink-muted">{teamLabels[incident.team]}</td>
+                      <td className="px-4 py-3.5 whitespace-nowrap text-ink-muted">
                         <time dateTime={incident.createdAt}>{formatTimestamp(incident.createdAt)}</time>
                       </td>
-                      <td className="px-4 py-3 text-right font-medium tabular-nums">{incident.eventCount}</td>
+                      <td className="px-4 py-3.5 text-right font-medium tabular-nums text-ink">
+                        {incident.eventCount}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <ul className="grid gap-2 md:hidden">
+            <ul className="grid gap-3 md:hidden">
               {visible.data.items.map((incident) => (
                 <li key={incident.id}>
                   <Link
                     href={`/incidents/${incident.id}`}
-                    className="block rounded-xl border border-line bg-surface p-4 text-ink hover:bg-surface-muted"
+                    className="block rounded-xl border border-line bg-surface p-4 text-ink transition hover:border-line-strong hover:bg-surface-muted"
                   >
                     <span className="font-medium">{incident.title}</span>
                     <span className="mt-2 flex flex-wrap items-center gap-2">
@@ -290,7 +327,10 @@ export function IncidentDashboard() {
               ))}
             </ul>
 
-            <nav className="mt-4 flex flex-wrap items-center justify-between gap-3" aria-label="Paginación">
+            <nav
+              className="flex flex-col gap-3 rounded-xl border border-line bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              aria-label="Paginación"
+            >
               <p className="text-sm text-ink-muted">
                 Página {visible.data.page} de {Math.max(visible.data.pageCount, 1)} · {visible.data.total}{" "}
                 {visible.data.total === 1 ? "incidente" : "incidentes"}
@@ -299,6 +339,7 @@ export function IncidentDashboard() {
                 <Button
                   type="button"
                   variant="secondary"
+                  className="h-9 hover:bg-surface-muted"
                   disabled={visible.data.page <= 1}
                   onClick={() => writeQuery({ page: visible.data.page - 1 })}
                 >
@@ -307,6 +348,7 @@ export function IncidentDashboard() {
                 <Button
                   type="button"
                   variant="secondary"
+                  className="h-9 hover:bg-surface-muted"
                   disabled={visible.data.page >= visible.data.pageCount}
                   onClick={() => writeQuery({ page: visible.data.page + 1 })}
                 >
@@ -318,7 +360,7 @@ export function IncidentDashboard() {
         ) : null}
       </section>
 
-      <div className="border-t border-line pt-6">
+      <div className="border-t border-line pt-8">
         <OperationsPanel />
       </div>
     </main>
@@ -338,18 +380,9 @@ function ServiceField({ service }: { service: string }) {
         name="service"
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink"
+        className="mt-1.5 h-10 w-full rounded-lg border border-line bg-canvas px-3 text-sm text-ink outline-none transition placeholder:text-ink-muted focus:border-action focus:ring-2 focus:ring-action/30"
         placeholder="checkout"
       />
-    </div>
-  );
-}
-
-function SummaryStat({ label, value }: { label: string; value: number | undefined }) {
-  return (
-    <div className="flex items-baseline gap-2">
-      <dt className="text-sm text-ink-muted">{label}</dt>
-      <dd className="text-base font-semibold tabular-nums text-ink">{value ?? "—"}</dd>
     </div>
   );
 }
@@ -376,7 +409,7 @@ function FilterSelect({
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink"
+        className="mt-1.5 h-10 w-full rounded-lg border border-line bg-canvas px-3 text-sm text-ink outline-none transition focus:border-action focus:ring-2 focus:ring-action/30"
       >
         <option value="">Todos</option>
         {options.map((option) => (
@@ -389,8 +422,38 @@ function FilterSelect({
   );
 }
 
-function StatusMessage({ children }: { children: ReactNode }) {
+function StatusMessage({
+  children,
+  tone = "neutral",
+}: {
+  children: ReactNode;
+  tone?: "loading" | "error" | "empty" | "neutral";
+}) {
+  const toneClass =
+    tone === "error"
+      ? "border-severity-critical/35 bg-surface-muted text-ink"
+      : tone === "empty"
+        ? "border-line bg-surface-muted/50 text-ink-muted"
+        : tone === "loading"
+          ? "border-line bg-surface text-ink-muted"
+          : "border-line bg-surface text-ink";
+
   return (
-    <div className="rounded-xl border border-line bg-surface p-6 text-sm text-ink">{children}</div>
+    <div
+      className={`rounded-xl border px-4 py-5 text-sm ${toneClass}`}
+      role={tone === "error" ? "alert" : undefined}
+    >
+      {tone === "loading" ? (
+        <span className="inline-flex items-center gap-2.5">
+          <span
+            aria-hidden="true"
+            className="size-2.5 animate-pulse rounded-full bg-action"
+          />
+          {children}
+        </span>
+      ) : (
+        children
+      )}
+    </div>
   );
 }
