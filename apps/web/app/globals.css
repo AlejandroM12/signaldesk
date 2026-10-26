@@ -50,8 +50,8 @@
   --action-hover: #1d4ed8;
   --action-ink: #f8fbff;
   --focus: #2563eb;
-  --sidebar: #0b1220;
-  --sidebar-active: #15233a;
+  --sidebar: #ffffff;
+  --sidebar-active: #e8eef9;
   --status-open: #fef3c7;
   --status-open-ink: #78350f;
   --status-investigating: #e0f2fe;
@@ -117,8 +117,8 @@
     --action-hover: #1d4ed8;
     --action-ink: #f8fbff;
     --focus: #2563eb;
-    --sidebar: #0b1220;
-    --sidebar-active: #15233a;
+    --sidebar: #ffffff;
+    --sidebar-active: #e8eef9;
     --status-open: #fef3c7;
     --status-open-ink: #78350f;
     --status-investigating: #e0f2fe;
