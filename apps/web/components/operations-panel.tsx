@@ -111,34 +111,41 @@ export function OperationsPanel() {
     <section id="operacion" aria-labelledby="operacion-title" className="scroll-mt-24">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 id="operacion-title" className="text-xl font-semibold tracking-tight">
+          <p className="text-sm font-medium text-action">Proceso</p>
+          <h2 id="operacion-title" className="mt-1 text-xl font-semibold tracking-tight text-ink">
             Operación
           </h2>
-          <p className="mt-1 max-w-2xl text-sm text-ink-muted">
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-muted">
             Contadores del proceso actual de la API. No son un historial persistente: se reinician al
             reiniciar la API y no se comparten entre instancias.
           </p>
         </div>
         {metricsAllowed || visibleCapabilities.status === "unconfigured" ? (
-          <Button type="button" variant="secondary" onClick={() => setMetricsAttempt((current) => current + 1)}>
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-9 hover:bg-surface-muted"
+            onClick={() => setMetricsAttempt((current) => current + 1)}
+          >
             Actualizar
           </Button>
         ) : null}
       </div>
 
-      <div className="mt-4" aria-live="polite" aria-busy={loading}>
+      <div className="mt-5" aria-live="polite" aria-busy={loading}>
         {loading ? (
-          <p className="rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">
+          <p className="inline-flex items-center gap-2.5 rounded-xl border border-line bg-surface px-4 py-3.5 text-sm text-ink-muted">
+            <span aria-hidden="true" className="size-2.5 animate-pulse rounded-full bg-action" />
             Cargando métricas…
           </p>
         ) : null}
         {visibleCapabilities.status === "blocked" ? (
-          <p className="rounded-xl border border-line bg-surface p-4 text-sm text-ink">
+          <p className="rounded-xl border border-line bg-surface-muted/50 px-4 py-3.5 text-sm text-ink">
             {PUBLIC_METRICS_MESSAGE}
           </p>
         ) : null}
         {visibleCapabilities.status === "unconfigured" ? (
-          <div className="rounded-xl border border-line bg-surface p-4 text-sm text-ink">
+          <div className="rounded-xl border border-line bg-surface px-4 py-3.5 text-sm text-ink">
             <p>Falta la variable NEXT_PUBLIC_API_URL.</p>
             <Button type="button" className="mt-3" onClick={() => setMetricsAttempt((current) => current + 1)}>
               Reintentar
@@ -146,7 +153,7 @@ export function OperationsPanel() {
           </div>
         ) : null}
         {visibleCapabilities.status === "error" ? (
-          <div className="rounded-xl border border-line bg-surface p-4 text-sm text-ink">
+          <div className="rounded-xl border border-severity-critical/35 bg-surface-muted px-4 py-3.5 text-sm text-ink">
             <p>{visibleCapabilities.message}</p>
             <Button type="button" className="mt-3" onClick={() => setCapabilityAttempt((current) => current + 1)}>
               Reintentar
@@ -154,7 +161,7 @@ export function OperationsPanel() {
           </div>
         ) : null}
         {metricsError ? (
-          <div className="rounded-xl border border-line bg-surface p-4 text-sm text-ink">
+          <div className="rounded-xl border border-severity-critical/35 bg-surface-muted px-4 py-3.5 text-sm text-ink">
             <p>{metricsError}</p>
             <Button type="button" className="mt-3" onClick={() => setMetricsAttempt((current) => current + 1)}>
               Reintentar
@@ -164,7 +171,9 @@ export function OperationsPanel() {
         {data ? (
           <div className="overflow-hidden rounded-xl border border-line bg-surface">
             {empty ? (
-              <p className="px-4 py-3 text-sm text-ink-muted">Todavía no hay observaciones en este proceso.</p>
+              <p className="border-b border-line bg-surface-muted/40 px-4 py-3 text-sm text-ink-muted">
+                Todavía no hay observaciones en este proceso.
+              </p>
             ) : null}
             <MetricGroup title="HTTP">
               <Metric label="Solicitudes HTTP" value={String(data.http.requests)} />
@@ -214,8 +223,8 @@ export function OperationsPanel() {
 
 function MetricGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="grid gap-3 border-t border-line px-4 py-3 first:border-t-0 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-baseline">
-      <h3 className="text-sm font-medium text-ink">{title}</h3>
+    <div className="grid gap-3 border-t border-line px-4 py-4 first:border-t-0 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-start">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{title}</h3>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">{children}</dl>
     </div>
   );
@@ -234,9 +243,9 @@ function Metric({
     tone === "alert" ? "text-severity-critical" : tone === "quiet" ? "text-ink-muted" : "text-ink";
 
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 rounded-lg bg-surface-muted/40 px-3 py-2">
       <dt className="text-xs text-ink-muted">{label}</dt>
-      <dd className={`mt-0.5 text-lg font-semibold tabular-nums ${valueTone}`}>{value}</dd>
+      <dd className={`mt-1 text-lg font-semibold tabular-nums tracking-tight ${valueTone}`}>{value}</dd>
     </div>
   );
 }

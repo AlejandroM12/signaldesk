@@ -2,16 +2,56 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Dark-first defaults. Explicit .light and system preference still apply. */
 :root {
+  color-scheme: dark;
+  --canvas: #070b14;
+  --surface: #0d1424;
+  --surface-muted: #121a2c;
+  --surface-elevated: #162033;
+  --line: #243044;
+  --line-strong: #334155;
+  --ink: #e8eef9;
+  --ink-muted: #93a4c3;
+  --action: #3b82f6;
+  --action-hover: #60a5fa;
+  --action-ink: #f8fbff;
+  --focus: #60a5fa;
+  --sidebar: #080e1a;
+  --sidebar-active: #13233f;
+  --status-open: #3a2a12;
+  --status-open-ink: #f6d48a;
+  --status-investigating: #0b2c40;
+  --status-investigating-ink: #c5e8fb;
+  --status-resolved: #052e26;
+  --status-resolved-ink: #b6f3d8;
+  --status-closed: #1f2937;
+  --status-closed-ink: #e2e8f0;
+  --severity-low: #94a3b8;
+  --severity-medium: #fbbf24;
+  --severity-high: #fb923c;
+  --severity-critical: #fca5a5;
+  --confidence-low: #94a3b8;
+  --confidence-medium: #fbbf24;
+  --confidence-high: #6ee7b7;
+}
+
+:root.light {
   color-scheme: light;
-  --canvas: #f6f6f7;
+  --canvas: #f4f7fb;
   --surface: #ffffff;
-  --surface-muted: #f3f3f4;
-  --line: #e4e4e7;
-  --ink: #18181b;
-  --ink-muted: #52525b;
-  --action: #18181b;
-  --action-ink: #fafafa;
+  --surface-muted: #eef2f7;
+  --surface-elevated: #ffffff;
+  --line: #d7e0ec;
+  --line-strong: #b8c5d6;
+  --ink: #0f172a;
+  --ink-muted: #475569;
+  --action: #2563eb;
+  --action-hover: #1d4ed8;
+  --action-ink: #f8fbff;
+  --focus: #2563eb;
+  --sidebar: #0b1220;
+  --sidebar-active: #15233a;
   --status-open: #fef3c7;
   --status-open-ink: #78350f;
   --status-investigating: #e0f2fe;
@@ -20,68 +60,80 @@
   --status-resolved-ink: #065f46;
   --status-closed: #e4e4e7;
   --status-closed-ink: #3f3f46;
-  --severity-low: #71717a;
+  --severity-low: #64748b;
   --severity-medium: #b45309;
   --severity-high: #c2410c;
   --severity-critical: #b91c1c;
-  --confidence-low: #71717a;
+  --confidence-low: #64748b;
   --confidence-medium: #b45309;
   --confidence-high: #047857;
 }
 
 :root.dark {
   color-scheme: dark;
-  --canvas: #101114;
-  --surface: #18181b;
-  --surface-muted: #202024;
-  --line: #313136;
-  --ink: #f4f4f5;
-  --ink-muted: #a1a1aa;
-  --action: #f4f4f5;
-  --action-ink: #18181b;
+  --canvas: #070b14;
+  --surface: #0d1424;
+  --surface-muted: #121a2c;
+  --surface-elevated: #162033;
+  --line: #243044;
+  --line-strong: #334155;
+  --ink: #e8eef9;
+  --ink-muted: #93a4c3;
+  --action: #3b82f6;
+  --action-hover: #60a5fa;
+  --action-ink: #f8fbff;
+  --focus: #60a5fa;
+  --sidebar: #080e1a;
+  --sidebar-active: #13233f;
   --status-open: #3a2a12;
   --status-open-ink: #f6d48a;
   --status-investigating: #0b2c40;
   --status-investigating-ink: #c5e8fb;
   --status-resolved: #052e26;
   --status-resolved-ink: #b6f3d8;
-  --status-closed: #27272a;
-  --status-closed-ink: #e4e4e7;
-  --severity-low: #a1a1aa;
+  --status-closed: #1f2937;
+  --status-closed-ink: #e2e8f0;
+  --severity-low: #94a3b8;
   --severity-medium: #fbbf24;
   --severity-high: #fb923c;
   --severity-critical: #fca5a5;
-  --confidence-low: #a1a1aa;
+  --confidence-low: #94a3b8;
   --confidence-medium: #fbbf24;
   --confidence-high: #6ee7b7;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    color-scheme: dark;
-    --canvas: #101114;
-    --surface: #18181b;
-    --surface-muted: #202024;
-    --line: #313136;
-    --ink: #f4f4f5;
-    --ink-muted: #a1a1aa;
-    --action: #f4f4f5;
-    --action-ink: #18181b;
-    --status-open: #3a2a12;
-    --status-open-ink: #f6d48a;
-    --status-investigating: #0b2c40;
-    --status-investigating-ink: #c5e8fb;
-    --status-resolved: #052e26;
-    --status-resolved-ink: #b6f3d8;
-    --status-closed: #27272a;
-    --status-closed-ink: #e4e4e7;
-    --severity-low: #a1a1aa;
-    --severity-medium: #fbbf24;
-    --severity-high: #fb923c;
-    --severity-critical: #fca5a5;
-    --confidence-low: #a1a1aa;
-    --confidence-medium: #fbbf24;
-    --confidence-high: #6ee7b7;
+@media (prefers-color-scheme: light) {
+  :root:not(.dark):not(.light) {
+    color-scheme: light;
+    --canvas: #f4f7fb;
+    --surface: #ffffff;
+    --surface-muted: #eef2f7;
+    --surface-elevated: #ffffff;
+    --line: #d7e0ec;
+    --line-strong: #b8c5d6;
+    --ink: #0f172a;
+    --ink-muted: #475569;
+    --action: #2563eb;
+    --action-hover: #1d4ed8;
+    --action-ink: #f8fbff;
+    --focus: #2563eb;
+    --sidebar: #0b1220;
+    --sidebar-active: #15233a;
+    --status-open: #fef3c7;
+    --status-open-ink: #78350f;
+    --status-investigating: #e0f2fe;
+    --status-investigating-ink: #0c4a6e;
+    --status-resolved: #d1fae5;
+    --status-resolved-ink: #065f46;
+    --status-closed: #e4e4e7;
+    --status-closed-ink: #3f3f46;
+    --severity-low: #64748b;
+    --severity-medium: #b45309;
+    --severity-high: #c2410c;
+    --severity-critical: #b91c1c;
+    --confidence-low: #64748b;
+    --confidence-medium: #b45309;
+    --confidence-high: #047857;
   }
 }
 
@@ -91,11 +143,17 @@
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
   --color-surface-muted: var(--surface-muted);
+  --color-surface-elevated: var(--surface-elevated);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
   --color-action: var(--action);
+  --color-action-hover: var(--action-hover);
   --color-action-ink: var(--action-ink);
+  --color-focus: var(--focus);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-active: var(--sidebar-active);
   --color-status-open: var(--status-open);
   --color-status-open-ink: var(--status-open-ink);
   --color-status-investigating: var(--status-investigating);
@@ -146,7 +204,7 @@
   }
 
   :where(a, button, input, select, textarea):focus-visible {
-    outline: 2px solid var(--action);
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
 }
